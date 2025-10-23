@@ -10,10 +10,27 @@ import ShowModel from '@/lib/models/Show';
 import TextModel from '@/lib/models/Text';
 import CdTrackModel from '@/lib/models/CdTrack';
 import DvdTrackModel from '@/lib/models/DvdTrack';
-import UploadFileModel from '@/lib/models/UploadFile';
+import { getCloudinaryUsage } from '@/lib/cloudinary';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+function formatDataSize(bytes: number) {
+  const megabytes = bytes / (1024 * 1024);
+  const gigabytes = megabytes / 1024;
+
+  if (gigabytes >= 1) {
+    return {
+      primary: `${gigabytes.toFixed(2)} GB`,
+      secondary: `${megabytes.toFixed(2)} MB`
+    } as const;
+  }
+
+  return {
+    primary: `${megabytes.toFixed(2)} MB`,
+    secondary: null
+  } as const;
+}
 
 async function getStats() {
   await connectMongo();
@@ -74,14 +91,7 @@ async function getStats() {
     TextModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean()
   ]);
 
-  const uploadsSize = await UploadFileModel.aggregate<[{ total: number }]>([
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$size' }
-      }
-    }
-  ]);
+  const cloudinaryUsage = await getCloudinaryUsage().catch(() => null);
 
   return {
     books: { total: booksTotal, published: booksPublished },
@@ -98,14 +108,30 @@ async function getStats() {
       .flat()
       .sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0))
       .slice(0, 5),
-    uploadsSize: uploadsSize[0]?.total || 0
+    cloudinary: cloudinaryUsage
   };
 }
 
 export default async function AdminDashboardPage() {
   const stats = await getStats();
 
-  const uploadsSizeInMb = stats.uploadsSize / 1024;
+  const storageBytes = stats.cloudinary?.storage.usage ?? 0;
+  const bandwidthBytes = stats.cloudinary?.bandwidth.usage ?? 0;
+  const resourceCount = stats.cloudinary?.resources.usage ?? 0;
+
+  const storageDisplay = formatDataSize(storageBytes);
+  const bandwidthDisplay = formatDataSize(bandwidthBytes);
+
+  const storageSupplement = storageDisplay.secondary
+    ? ` (${storageDisplay.secondary})`
+    : '';
+  const bandwidthSupplement = bandwidthDisplay.secondary
+    ? ` (${bandwidthDisplay.secondary})`
+    : '';
+
+  const formattedResourceCount = new Intl.NumberFormat('pt-BR').format(
+    resourceCount
+  );
 
   return (
     <div className="space-y-6">
@@ -191,8 +217,23 @@ export default async function AdminDashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Armazenamento Cloudinary</CardTitle>
-            <CardDescription>{uploadsSizeInMb.toFixed(2)} MB utilizados</CardDescription>
+            <CardDescription>
+              {stats.cloudinary
+                ? `${storageDisplay.primary} utilizados${storageSupplement}`
+                : 'Dados indisponíveis'}
+            </CardDescription>
           </CardHeader>
+          {stats.cloudinary ? (
+            <CardContent>
+              <div className="space-y-1 text-sm text-muted-foreground">
+                <p>Arquivos: {formattedResourceCount}</p>
+                <p>
+                  Largura de banda: {bandwidthDisplay.primary}
+                  {bandwidthSupplement}
+                </p>
+              </div>
+            </CardContent>
+          ) : null}
         </Card>
       </div>
       <Card>
