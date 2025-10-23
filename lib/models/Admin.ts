@@ -1,4 +1,4 @@
-import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose';
+import { Schema, model, models, type InferSchemaType, type Model } from 'mongoose';
 
 const AdminSchema = new Schema(
   {
@@ -17,5 +17,5 @@ export type Admin = InferSchemaType<typeof AdminSchema>;
 
 type AdminModel = Model<Admin>;
 
-export default (mongoose.models.Admin as AdminModel | undefined) ||
-  mongoose.model<Admin>('Admin', AdminSchema);
+export default (models?.Admin as AdminModel | undefined) ||
+  model<Admin>('Admin', AdminSchema);
