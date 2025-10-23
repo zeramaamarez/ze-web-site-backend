@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+
 import { connectMongo } from '@/lib/mongodb';
 import BookModel from '@/lib/models/Book';
 import CdModel from '@/lib/models/Cd';
@@ -8,8 +10,6 @@ import MessageModel from '@/lib/models/Message';
 import PhotoModel from '@/lib/models/Photo';
 import ShowModel from '@/lib/models/Show';
 import TextModel from '@/lib/models/Text';
-import CdTrackModel from '@/lib/models/CdTrack';
-import DvdTrackModel from '@/lib/models/DvdTrack';
 import { getCloudinaryUsage } from '@/lib/cloudinary';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { format } from 'date-fns';
@@ -35,6 +35,11 @@ function formatDataSize(bytes: number) {
 async function getStats() {
   await connectMongo();
 
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error('Database connection not initialized');
+  }
+
   const [
     booksTotal,
     booksPublished,
@@ -54,8 +59,8 @@ async function getStats() {
     showsPublished,
     textsTotal,
     textsPublished,
-    cdTracks,
-    dvdTracks
+    cdComponentTracks,
+    dvdComponentTracks
   ] = await Promise.all([
     BookModel.countDocuments(),
     BookModel.countDocuments({ published_at: { $ne: null } }),
@@ -75,8 +80,8 @@ async function getStats() {
     ShowModel.countDocuments({ published_at: { $ne: null } }),
     TextModel.countDocuments(),
     TextModel.countDocuments({ published_at: { $ne: null } }),
-    CdTrackModel.countDocuments(),
-    DvdTrackModel.countDocuments()
+    db.collection('components_cd_tracks').countDocuments(),
+    db.collection('components_dvd_tracks').countDocuments()
   ]);
 
   const latest = await Promise.all([
@@ -103,7 +108,11 @@ async function getStats() {
     photos: { total: photosTotal, published: photosPublished },
     shows: { total: showsTotal, published: showsPublished },
     texts: { total: textsTotal, published: textsPublished },
-    tracks: cdTracks + dvdTracks,
+    tracks: {
+      cds: cdComponentTracks,
+      dvds: dvdComponentTracks,
+      total: cdComponentTracks + dvdComponentTracks
+    },
     latest: latest
       .flat()
       .sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0))
@@ -211,8 +220,15 @@ export default async function AdminDashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Total de faixas</CardTitle>
-            <CardDescription>{stats.tracks} faixas cadastradas</CardDescription>
+            <CardDescription>{stats.tracks.total} faixas cadastradas</CardDescription>
           </CardHeader>
+          <CardContent>
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <p>Faixas de CDs: {stats.tracks.cds}</p>
+              <p>Faixas de DVDs: {stats.tracks.dvds}</p>
+              <p>Total: {stats.tracks.total}</p>
+            </div>
+          </CardContent>
         </Card>
         <Card>
           <CardHeader>
