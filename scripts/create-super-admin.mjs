@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
-import { loadEnvConfig } from '@next/env';
+import pkg from '@next/env';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+
+const { loadEnvConfig } = pkg;
 
 loadEnvConfig(process.cwd());
 
