@@ -14,11 +14,13 @@ import {
   MessageSquare,
   Camera,
   Calendar,
-  FileText
+  FileText,
+  Images
 } from 'lucide-react';
 
 const baseLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/media', label: 'Media Library', icon: Images },
   { href: '/admin/books', label: 'Livros', icon: BookOpenText },
   { href: '/admin/cds', label: 'CDs', icon: Disc3 },
   { href: '/admin/dvds', label: 'DVDs', icon: Film },

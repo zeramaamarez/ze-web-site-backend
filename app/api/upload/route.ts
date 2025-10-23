@@ -50,6 +50,117 @@ async function uploadToCloudinary(
   });
 }
 
+export async function GET(request: Request) {
+  const authResult = await requireAdmin();
+  if ('response' in authResult) return authResult.response;
+
+  const { searchParams } = new URL(request.url);
+  const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
+  const pageSizeRaw = parseInt(searchParams.get('pageSize') || '25', 10);
+  const pageSize = Math.min(Math.max(pageSizeRaw, 1), 100);
+  const search = searchParams.get('search');
+  const type = searchParams.get('type');
+  const dateRange = searchParams.get('dateRange');
+  const size = searchParams.get('size');
+  const sortParam = searchParams.get('sort') || 'createdAt';
+  const orderParam = searchParams.get('order') === 'asc' ? 1 : -1;
+
+  const filters: Record<string, unknown>[] = [];
+
+  if (search) {
+    filters.push({ name: { $regex: search, $options: 'i' } });
+  }
+
+  if (type && type !== 'all') {
+    if (type === 'other') {
+      filters.push({ mime: { $not: new RegExp('^(image|audio|video)/', 'i') } });
+    } else if (type === 'raw') {
+      filters.push({ 'provider_metadata.resource_type': 'raw' });
+    } else {
+      filters.push({ mime: { $regex: new RegExp(`^${type}/`, 'i') } });
+    }
+  }
+
+  if (dateRange && dateRange !== 'all') {
+    const now = Date.now();
+    let milliseconds = 0;
+    switch (dateRange) {
+      case '24h':
+        milliseconds = 24 * 60 * 60 * 1000;
+        break;
+      case '7d':
+        milliseconds = 7 * 24 * 60 * 60 * 1000;
+        break;
+      case '30d':
+        milliseconds = 30 * 24 * 60 * 60 * 1000;
+        break;
+      case '90d':
+        milliseconds = 90 * 24 * 60 * 60 * 1000;
+        break;
+      case '365d':
+        milliseconds = 365 * 24 * 60 * 60 * 1000;
+        break;
+      default:
+        milliseconds = 0;
+    }
+
+    if (milliseconds > 0) {
+      const startDate = new Date(now - milliseconds);
+      filters.push({ createdAt: { $gte: startDate } });
+    }
+  }
+
+  if (size && size !== 'all') {
+    const sizeFilter: { $lt?: number; $gte?: number } = {};
+    // The "size" field is stored in kilobytes
+    switch (size) {
+      case 'small':
+        sizeFilter.$lt = 1024; // < 1 MB
+        break;
+      case 'medium':
+        sizeFilter.$gte = 1024; // >= 1 MB
+        sizeFilter.$lt = 5 * 1024; // < 5 MB
+        break;
+      case 'large':
+        sizeFilter.$gte = 5 * 1024; // >= 5 MB
+        break;
+      default:
+        break;
+    }
+
+    if (Object.keys(sizeFilter).length > 0) {
+      filters.push({ size: sizeFilter });
+    }
+  }
+
+  const allowedSorts = new Set(['name', 'createdAt', 'size']);
+  const sortField = allowedSorts.has(sortParam) ? sortParam : 'createdAt';
+  const sort = { [sortField]: orderParam } as Record<string, 1 | -1>;
+
+  const query = filters.length ? { $and: filters } : {};
+
+  await connectMongo();
+
+  const [total, uploads] = await Promise.all([
+    UploadFileModel.countDocuments(query),
+    UploadFileModel.find(query)
+      .sort(sort)
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
+      .lean()
+  ]);
+
+  return NextResponse.json({
+    data: uploads,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize) || 1
+    }
+  });
+}
+
 export async function POST(request: Request) {
   const authResult = await requireAdmin();
   if ('response' in authResult) return authResult.response;
