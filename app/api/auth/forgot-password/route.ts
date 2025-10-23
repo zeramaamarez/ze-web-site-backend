@@ -5,23 +5,24 @@ import { connectMongo } from '@/lib/mongodb';
 import AdminModel from '@/lib/models/Admin';
 import PasswordResetTokenModel from '@/lib/models/PasswordResetToken';
 import { forgotPasswordSchema } from '@/lib/validations/auth';
+import { env } from '@/lib/env';
 
 function getBaseUrl() {
-  return process.env.NEXTAUTH_URL || 'http://localhost:3000';
+  return env.NEXTAUTH_URL || 'http://localhost:3000';
 }
 
 async function getTransporter() {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_PORT || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  if (!env.SMTP_HOST || !env.SMTP_PORT || !env.SMTP_USER || !env.SMTP_PASS) {
     throw new Error('Configuração SMTP ausente');
   }
 
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: Number(process.env.SMTP_PORT) === 465,
+    host: env.SMTP_HOST,
+    port: Number(env.SMTP_PORT),
+    secure: Number(env.SMTP_PORT) === 465,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS
     }
   });
 }
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
       const transporter = await getTransporter();
       const resetUrl = `${getBaseUrl()}/auth/forgot-password?token=${token}`;
       await transporter.sendMail({
-        from: process.env.SMTP_USER,
+        from: env.SMTP_USER,
         to: email,
         subject: 'Recuperação de senha',
         html: `<p>Olá ${admin.name},</p><p>Acesse o link para redefinir sua senha:</p><p><a href="${resetUrl}">${resetUrl}</a></p>`

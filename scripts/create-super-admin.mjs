@@ -10,7 +10,9 @@ const { loadEnvConfig } = pkg;
 
 loadEnvConfig(process.cwd());
 
-const { MONGODB_URI, MONGODB_DB_NAME } = process.env;
+const { env } = await import('../env.mjs');
+
+const { MONGODB_URI, MONGODB_DB_NAME } = env;
 
 if (!MONGODB_URI) {
   console.error('A variável de ambiente MONGODB_URI não está definida.');
