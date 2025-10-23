@@ -43,7 +43,8 @@ export default function LoginPage() {
     setLoading(false);
 
     if (response?.error) {
-      toast.error('Credenciais inválidas');
+      const message = response.error === 'CredentialsSignin' ? 'Credenciais inválidas' : response.error;
+      toast.error(message);
       return;
     }
 

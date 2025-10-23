@@ -39,6 +39,10 @@ export const { handlers: authHandlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
+        if (!admin.approved) {
+          throw new Error('Sua conta aguarda aprovação do administrador');
+        }
+
         return {
           id: admin._id.toString(),
           name: admin.name,

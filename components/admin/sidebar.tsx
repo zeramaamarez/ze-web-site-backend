@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { BookOpenText, Disc3, Film, Clapperboard, LayoutDashboard } from 'lucide-react';
+import { BookOpenText, Disc3, Film, Clapperboard, LayoutDashboard, Users } from 'lucide-react';
 
-const links = [
+const baseLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/books', label: 'Livros', icon: BookOpenText },
   { href: '/admin/cds', label: 'CDs', icon: Disc3 },
@@ -13,8 +13,15 @@ const links = [
   { href: '/admin/clips', label: 'Clips', icon: Clapperboard }
 ];
 
-export function Sidebar() {
+const superAdminLinks = [{ href: '/admin/users', label: 'Usuários', icon: Users }];
+
+interface SidebarProps {
+  role?: 'admin' | 'super_admin';
+}
+
+export function Sidebar({ role }: SidebarProps) {
   const pathname = usePathname();
+  const links = role === 'super_admin' ? [...baseLinks, ...superAdminLinks] : baseLinks;
 
   return (
     <aside className="flex w-64 flex-col border-r bg-card">

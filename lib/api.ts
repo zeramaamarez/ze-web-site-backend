@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { Session } from 'next-auth';
 import { auth } from '@/lib/auth';
 
 export async function requireAdmin() {
@@ -10,7 +11,7 @@ export async function requireAdmin() {
     } as const;
   }
 
-  if (session.user.role !== 'admin') {
+  if (session.user.role !== 'admin' && session.user.role !== 'super_admin') {
     return {
       session,
       response: NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
@@ -18,4 +19,15 @@ export async function requireAdmin() {
   }
 
   return { session } as const;
+}
+
+type RequireSuperAdminResult = { session: Session } | NextResponse;
+
+export async function requireSuperAdmin(): Promise<RequireSuperAdminResult> {
+  const session = await auth();
+  if (!session?.user || session.user.role !== 'super_admin') {
+    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+  }
+
+  return { session };
 }

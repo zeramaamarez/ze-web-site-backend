@@ -6,7 +6,8 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "create-super-admin": "node scripts/create-super-admin.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
