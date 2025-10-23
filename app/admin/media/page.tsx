@@ -34,11 +34,15 @@ interface MediaAsset {
   url: string;
   ext?: string;
   mime?: string;
+  type?: string;
   size?: number;
   width?: number;
   height?: number;
-  createdAt?: string;
-  updatedAt?: string;
+  hash?: string;
+  cloudinaryId?: string;
+  provider?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   provider_metadata?: {
     public_id?: string;
     resource_type?: string;
@@ -57,11 +61,13 @@ interface MediaLibraryResponse {
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
-function formatFileSize(sizeInKb?: number | null) {
-  if (!sizeInKb || sizeInKb <= 0) {
+function formatFileSize(sizeValue?: number | null) {
+  if (!sizeValue || sizeValue <= 0) {
     return '—';
   }
-  const sizeInBytes = sizeInKb * 1024;
+
+  const isProbablyBytes = sizeValue > 1024 * 1024;
+  const sizeInBytes = isProbablyBytes ? sizeValue : sizeValue * 1024;
   const formatter = new Intl.NumberFormat('pt-BR', {
     style: 'unit',
     unit: 'byte',
@@ -90,7 +96,7 @@ function formatDimensions(asset: MediaAsset) {
   return `${asset.width} × ${asset.height}`;
 }
 
-function formatDate(date?: string) {
+function formatDate(date?: string | null) {
   if (!date) return '—';
   try {
     return format(new Date(date), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
@@ -101,7 +107,25 @@ function formatDate(date?: string) {
 }
 
 function isImage(asset: MediaAsset) {
-  return Boolean(asset.mime?.startsWith('image/'));
+  if (asset.mime?.startsWith('image/')) {
+    return true;
+  }
+
+  return asset.type === 'image';
+}
+
+function getAssetTypeLabel(asset: MediaAsset) {
+  if (asset.type) {
+    return asset.type
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+  }
+
+  if (asset.mime) {
+    return asset.mime;
+  }
+
+  return '—';
 }
 
 export default function MediaLibraryPage() {
@@ -121,6 +145,9 @@ export default function MediaLibraryPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
   const [assetToDelete, setAssetToDelete] = useState<MediaAsset | null>(null);
+
+  const cloudinaryPublicId =
+    selectedAsset?.cloudinaryId || selectedAsset?.provider_metadata?.public_id || null;
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -158,7 +185,7 @@ export default function MediaLibraryPage() {
         params.set('size', sizeFilter);
       }
 
-      const response = await fetch(`/api/upload?${params.toString()}`);
+      const response = await fetch(`/api/media?${params.toString()}`);
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as { error?: string } | null;
         toast.error(data?.error || 'Erro ao carregar arquivos');
@@ -166,9 +193,13 @@ export default function MediaLibraryPage() {
       }
 
       const data = (await response.json()) as MediaLibraryResponse;
-      setAssets(data.data);
-      setPage(data.pagination.page || 1);
-      setTotalPages(Math.max(1, data.pagination.totalPages || 1));
+      const nextAssets = Array.isArray(data.data) ? data.data : [];
+      const nextTotalPages = Math.max(1, data.pagination.totalPages || 1);
+      const nextPage = Math.min(data.pagination.page || 1, nextTotalPages);
+
+      setAssets(nextAssets);
+      setTotalPages(nextTotalPages);
+      setPage(nextPage);
       setTotalItems(data.pagination.total || 0);
     } catch (error) {
       console.error('Failed to load media assets', error);
@@ -514,7 +545,7 @@ export default function MediaLibraryPage() {
                     </div>
                     <div>
                       <p className="font-medium text-foreground">Tipo</p>
-                      <p>{asset.mime || '—'}</p>
+                      <p>{getAssetTypeLabel(asset)}</p>
                     </div>
                   </div>
                   <div className="mt-auto flex items-center justify-between gap-2 pt-2">
@@ -597,6 +628,10 @@ export default function MediaLibraryPage() {
                         </dd>
                       </div>
                       <div className="flex items-center justify-between gap-4">
+                        <dt className="text-muted-foreground">Tipo</dt>
+                        <dd className="font-medium text-foreground">{getAssetTypeLabel(selectedAsset)}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
                         <dt className="text-muted-foreground">Dimensões</dt>
                         <dd className="font-medium text-foreground">{formatDimensions(selectedAsset)}</dd>
                       </div>
@@ -618,11 +653,11 @@ export default function MediaLibraryPage() {
                           {selectedAsset.url}
                         </dd>
                       </div>
-                      {selectedAsset.provider_metadata?.public_id && (
+                      {cloudinaryPublicId && (
                         <div className="flex flex-col gap-1">
                           <dt className="text-muted-foreground">Cloudinary public ID</dt>
-                          <dd className="truncate text-xs text-foreground" title={selectedAsset.provider_metadata.public_id}>
-                            {selectedAsset.provider_metadata.public_id}
+                          <dd className="truncate text-xs text-foreground" title={cloudinaryPublicId}>
+                            {cloudinaryPublicId}
                           </dd>
                         </div>
                       )}
