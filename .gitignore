@@ -1,0 +1,53 @@
+# === Node / NPM/Yarn/Pnpm ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# === Next.js ===
+.next/
+.next/cache/
+out/
+
+# === Build / Bundlers ===
+dist/
+build/
+.turbo/
+.vercel/
+
+# === Environment files ===
+.env
+.env.*
+!.env.example
+
+# === TypeScript ===
+*.tsbuildinfo
+
+# === Lint / Test / Coverage ===
+.eslintcache
+coverage/
+.nyc_output/
+
+# === Logs / PIDs / Temp ===
+logs/
+*.log
+*.log.*
+pids/
+*.pid
+*.pid.lock
+*.seed
+tmp/
+temp/
+
+# === Editors / OS ===
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.swp
+*.swo
+.cache/
