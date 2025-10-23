@@ -3,7 +3,12 @@ import { z } from 'zod';
 export const cdTrackSchema = z.object({
   _id: z.string().optional(),
   name: z.string().min(1, 'Nome é obrigatório'),
-  composers: z.string().optional()
+  publishing_company: z.string().optional(),
+  composers: z.string().optional(),
+  time: z.string().optional(),
+  track: z.string().optional().nullable(),
+  lyric: z.string().optional(),
+  data_sheet: z.string().optional()
 });
 
 export const cdSchema = z.object({

@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RichTextEditor } from '@/components/admin/rich-text-editor';
 import { ImageUpload, type UploadedImage } from '@/components/admin/image-upload';
+import { AudioUpload, type UploadedAudio } from '@/components/admin/audio-upload';
 import { toast } from 'sonner';
 
 const formSchema = cdSchema.extend({
@@ -18,7 +19,9 @@ const formSchema = cdSchema.extend({
   tracks: z.array(cdTrackSchema.omit({ _id: true })).optional()
 });
 
-type TrackForm = z.infer<typeof cdTrackSchema.omit({ _id: true })>;
+type TrackForm = z.infer<typeof cdTrackSchema.omit({ _id: true })> & {
+  audioFile?: UploadedAudio | null;
+};
 type FormValues = z.infer<typeof formSchema>;
 
 export default function NewCdPage() {
@@ -38,10 +41,13 @@ export default function NewCdPage() {
   });
 
   const addTrack = () => {
-    setTracks((prev) => [...prev, { name: '', composers: '' }]);
+    setTracks((prev) => [
+      ...prev,
+      { name: '', publishing_company: '', composers: '', time: '', track: undefined, lyric: '', data_sheet: '', audioFile: null }
+    ]);
   };
 
-  const updateTrack = (index: number, key: keyof TrackForm, value: string) => {
+  const updateTrack = <K extends keyof TrackForm>(index: number, key: K, value: TrackForm[K]) => {
     setTracks((prev) => prev.map((track, i) => (i === index ? { ...track, [key]: value } : track)));
   };
 
@@ -53,7 +59,10 @@ export default function NewCdPage() {
     const { published, ...rest } = values;
     const payload = {
       ...rest,
-      tracks,
+      tracks: tracks.map(({ audioFile: _audioFile, ...rest }) => ({
+        ...rest,
+        track: rest.track || undefined
+      })),
       published_at: published ? new Date().toISOString() : null,
       cover: cover[0]?._id
     };
@@ -136,8 +145,45 @@ export default function NewCdPage() {
                     <Input value={track.name} onChange={(event) => updateTrack(index, 'name', event.target.value)} />
                   </div>
                   <div className="space-y-2">
+                    <Label>Gravadora</Label>
+                    <Input
+                      value={track.publishing_company || ''}
+                      onChange={(event) => updateTrack(index, 'publishing_company', event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label>Compositores</Label>
-                    <Input value={track.composers || ''} onChange={(event) => updateTrack(index, 'composers', event.target.value)} />
+                    <Input
+                      value={track.composers || ''}
+                      onChange={(event) => updateTrack(index, 'composers', event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Duração</Label>
+                    <Input value={track.time || ''} onChange={(event) => updateTrack(index, 'time', event.target.value)} />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Áudio</Label>
+                    <AudioUpload
+                      value={track.audioFile ?? undefined}
+                      onChange={(audio) => {
+                        updateTrack(index, 'audioFile', audio ?? null);
+                        updateTrack(index, 'track', audio?._id ?? undefined);
+                      }}
+                      folder="tracks"
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Letra</Label>
+                    <RichTextEditor value={track.lyric || ''} onChange={(value) => updateTrack(index, 'lyric', value)} rows={4} />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Ficha Técnica</Label>
+                    <RichTextEditor
+                      value={track.data_sheet || ''}
+                      onChange={(value) => updateTrack(index, 'data_sheet', value)}
+                      rows={4}
+                    />
                   </div>
                 </div>
               </div>

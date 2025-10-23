@@ -12,7 +12,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="flex min-h-screen bg-background">
-      <Sidebar />
+      <Sidebar role={session.user.role ?? 'admin'} />
       <div className="flex flex-1 flex-col">
         <Header name={session.user.name} email={session.user.email} />
         <main className="flex-1 space-y-6 bg-muted/30 p-6">{children}</main>

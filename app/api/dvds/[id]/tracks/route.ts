@@ -26,7 +26,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: 'DVD não encontrado' }, { status: 404 });
   }
 
-  const track = await DvdTrackModel.create(parsed.data);
+  const track = await DvdTrackModel.create({
+    name: parsed.data.name,
+    composers: parsed.data.composers,
+    publishing_company: parsed.data.publishing_company,
+    time: parsed.data.time,
+    lyric: parsed.data.lyric
+  });
   dvd.track = [...(dvd.track || []), { ref: track._id, kind: 'ComponentDvdTrack' }];
   dvd.updated_by = authResult.session.user!.id;
   await dvd.save();
@@ -36,6 +42,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       _id: track._id.toString(),
       name: track.name,
       composers: track.composers,
+      publishing_company: track.publishing_company,
       time: track.time,
       lyric: track.lyric
     }

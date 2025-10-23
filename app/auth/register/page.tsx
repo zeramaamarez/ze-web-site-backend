@@ -45,7 +45,7 @@ export default function RegisterPage() {
       return;
     }
 
-    toast.success('Conta criada com sucesso');
+    toast.success('Conta criada com sucesso. Aguarde aprovação do administrador.');
     router.push('/auth/login');
   };
 

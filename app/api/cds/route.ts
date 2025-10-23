@@ -6,21 +6,31 @@ import { cdSchema } from '@/lib/validations/cd';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
 
-const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
+const LEGACY_SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
+const SORTABLE_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'release_date', 'company', 'published_at']);
 
-function buildSort(sortParam?: string | null) {
+function buildLegacySort(sortParam?: string | null) {
   const sortField = sortParam?.replace(/^-/, '') || 'createdAt';
   const direction = sortParam?.startsWith('-') || !sortParam ? -1 : 1;
-  if (!SORT_FIELDS.has(sortField)) {
+  if (!LEGACY_SORT_FIELDS.has(sortField)) {
     return { createdAt: -1 } as const;
   }
   return { [sortField]: direction } as Record<string, 1 | -1>;
 }
 
+function buildSort(sortParam?: string | null, orderParam?: string | null) {
+  if (sortParam && orderParam && SORTABLE_FIELDS.has(sortParam)) {
+    const direction = orderParam === 'asc' ? 1 : -1;
+    return { [sortParam]: direction } as Record<string, 1 | -1>;
+  }
+
+  return buildLegacySort(sortParam);
+}
+
 async function serializeCd(id: string) {
   return CdModel.findById(id)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'CdTrack' })
+    .populate({ path: 'track.ref', model: 'CdTrack', populate: { path: 'track', model: 'UploadFile' } })
     .lean();
 }
 
@@ -30,25 +40,37 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
-  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20', 10), 1), 100);
+  const limitParam = searchParams.get('pageSize') || searchParams.get('limit') || '20';
+  const limit = Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100);
   const search = searchParams.get('search');
-  const publishedParam = searchParams.get('published');
-  const sort = buildSort(searchParams.get('sort'));
+  const statusParam = searchParams.get('status') || searchParams.get('published');
+  const sort = buildSort(searchParams.get('sort'), searchParams.get('order'));
+  const yearFilter = searchParams.get('year');
+  const companyFilter = searchParams.get('company');
 
   const andFilters: Record<string, unknown>[] = [];
   if (search) {
     andFilters.push({
       $or: [
         { title: { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } }
+        { company: { $regex: search, $options: 'i' } },
+        { release_date: { $regex: search, $options: 'i' } }
       ]
     });
   }
 
-  if (publishedParam === 'true') {
+  if (statusParam === 'true' || statusParam === 'published') {
     andFilters.push({ published_at: { $ne: null } });
-  } else if (publishedParam === 'false') {
+  } else if (statusParam === 'false' || statusParam === 'draft') {
     andFilters.push({ published_at: null });
+  }
+
+  if (yearFilter) {
+    andFilters.push({ release_date: { $regex: new RegExp(yearFilter, 'i') } });
+  }
+
+  if (companyFilter) {
+    andFilters.push({ company: { $regex: new RegExp(companyFilter, 'i') } });
   }
 
   const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
@@ -68,6 +90,7 @@ export async function GET(request: Request) {
     pagination: {
       page,
       limit,
+      pageSize: limit,
       total,
       totalPages: Math.ceil(total / limit)
     }
@@ -96,7 +119,18 @@ export async function POST(request: Request) {
     if (parsed.data.tracks?.length) {
       const trackRefs = [] as { ref: string; kind: string }[];
       for (const track of parsed.data.tracks) {
-        const trackDoc = await CdTrackModel.create({ name: track.name, composers: track.composers });
+        const trackDoc = await CdTrackModel.create({
+          name: track.name,
+          publishing_company: track.publishing_company,
+          composers: track.composers,
+          time: track.time,
+          track: track.track || undefined,
+          lyric: track.lyric,
+          data_sheet: track.data_sheet
+        });
+        if (track.track) {
+          await attachFile({ fileId: track.track, refId: trackDoc._id, kind: 'ComponentCdTrack', field: 'track' });
+        }
         trackRefs.push({ ref: trackDoc._id.toString(), kind: 'ComponentCdTrack' });
       }
       cd.track = trackRefs.map((track) => ({ ref: track.ref, kind: track.kind }));

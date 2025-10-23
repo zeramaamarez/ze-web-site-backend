@@ -25,14 +25,10 @@ export async function POST(request: Request) {
     }
 
     const hashed = await bcrypt.hash(password, 10);
-    const admin = await AdminModel.create({ name, email, password: hashed });
+    await AdminModel.create({ name, email, password: hashed, approved: false });
 
     return NextResponse.json(
-      {
-        id: admin._id.toString(),
-        name: admin.name,
-        email: admin.email
-      },
+      { message: 'Conta criada com sucesso. Aguarde aprovação do administrador.' },
       { status: 201 }
     );
   } catch (error) {

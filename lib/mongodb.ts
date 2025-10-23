@@ -1,10 +1,5 @@
 import mongoose from 'mongoose';
-
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  throw new Error('MONGODB_URI environment variable is not defined');
-}
+import { env } from '@/lib/env';
 
 interface MongooseCache {
   conn: typeof mongoose | null;
@@ -23,8 +18,8 @@ export async function connectMongo() {
   }
 
   if (!cached?.promise) {
-    cached!.promise = mongoose.connect(MONGODB_URI, {
-      dbName: process.env.MONGODB_DB_NAME || undefined
+    cached!.promise = mongoose.connect(env.MONGODB_URI, {
+      dbName: env.MONGODB_DB_NAME || undefined
     });
   }
 

@@ -39,7 +39,7 @@ export default function NewDvdPage() {
   });
 
   const addTrack = () => {
-    setTracks((prev) => [...prev, { name: '', composers: '', time: '', lyric: '' }]);
+    setTracks((prev) => [...prev, { name: '', composers: '', time: '', publishing_company: '', lyric: '' }]);
   };
 
   const updateTrack = (index: number, key: keyof TrackForm, value: string) => {
@@ -144,6 +144,13 @@ export default function NewDvdPage() {
                   <div className="space-y-2">
                     <Label>Compositores</Label>
                     <Input value={track.composers || ''} onChange={(event) => updateTrack(index, 'composers', event.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Gravadora</Label>
+                    <Input
+                      value={track.publishing_company || ''}
+                      onChange={(event) => updateTrack(index, 'publishing_company', event.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Duração</Label>
