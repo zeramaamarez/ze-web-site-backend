@@ -3,14 +3,31 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { BookOpenText, Disc3, Film, Clapperboard, LayoutDashboard, Users } from 'lucide-react';
+import {
+  BookOpenText,
+  Disc3,
+  Film,
+  Clapperboard,
+  LayoutDashboard,
+  Users,
+  Music,
+  MessageSquare,
+  Camera,
+  Calendar,
+  FileText
+} from 'lucide-react';
 
 const baseLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/books', label: 'Livros', icon: BookOpenText },
   { href: '/admin/cds', label: 'CDs', icon: Disc3 },
   { href: '/admin/dvds', label: 'DVDs', icon: Film },
-  { href: '/admin/clips', label: 'Clips', icon: Clapperboard }
+  { href: '/admin/clips', label: 'Clips', icon: Clapperboard },
+  { href: '/admin/lyrics', label: 'Letras', icon: Music },
+  { href: '/admin/messages', label: 'Mensagens', icon: MessageSquare },
+  { href: '/admin/photos', label: 'Fotos', icon: Camera },
+  { href: '/admin/shows', label: 'Shows', icon: Calendar },
+  { href: '/admin/texts', label: 'Textos', icon: FileText }
 ];
 
 const superAdminLinks = [{ href: '/admin/users', label: 'Usuários', icon: Users }];

@@ -63,13 +63,25 @@ export default function EditDvdPage() {
       }
       if (Array.isArray(data.track)) {
         setTracks(
-          data.track.map((item: { ref?: { _id: string; name: string; composers?: string; time?: string; lyric?: string } }) => ({
-            _id: item.ref?._id,
-            name: item.ref?.name || '',
-            composers: item.ref?.composers || '',
-            time: item.ref?.time || '',
-            lyric: item.ref?.lyric || ''
-          }))
+          data.track.map(
+            (item: {
+              ref?: {
+                _id: string;
+                name: string;
+                composers?: string;
+                publishing_company?: string;
+                time?: string;
+                lyric?: string;
+              };
+            }) => ({
+              _id: item.ref?._id,
+              name: item.ref?.name || '',
+              composers: item.ref?.composers || '',
+              publishing_company: item.ref?.publishing_company || '',
+              time: item.ref?.time || '',
+              lyric: item.ref?.lyric || ''
+            })
+          )
         );
       }
       setLoading(false);
@@ -79,7 +91,7 @@ export default function EditDvdPage() {
   }, [params.id]);
 
   const addTrack = () => {
-    setTracks((prev) => [...prev, { name: '', composers: '', time: '', lyric: '' }]);
+    setTracks((prev) => [...prev, { name: '', composers: '', publishing_company: '', time: '', lyric: '' }]);
   };
 
   const updateTrack = (index: number, key: keyof TrackForm, value: string) => {
@@ -188,6 +200,13 @@ export default function EditDvdPage() {
                   <div className="space-y-2">
                     <Label>Compositores</Label>
                     <Input value={track.composers || ''} onChange={(event) => updateTrack(index, 'composers', event.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Gravadora</Label>
+                    <Input
+                      value={track.publishing_company || ''}
+                      onChange={(event) => updateTrack(index, 'publishing_company', event.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Duração</Label>

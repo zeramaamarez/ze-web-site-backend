@@ -10,7 +10,7 @@ import { isObjectId } from '@/lib/utils';
 async function serializeCd(id: string) {
   return CdModel.findById(id)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'CdTrack' })
+    .populate({ path: 'track.ref', model: 'CdTrack', populate: { path: 'track', model: 'UploadFile' } })
     .lean();
 }
 
@@ -64,14 +64,39 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         if (track._id && isObjectId(track._id)) {
           const existingTrack = await CdTrackModel.findById(track._id);
           if (existingTrack) {
+            const previousAudio = existingTrack.track?.toString();
             existingTrack.name = track.name;
+            existingTrack.publishing_company = track.publishing_company;
             existingTrack.composers = track.composers;
+            existingTrack.time = track.time;
+            existingTrack.lyric = track.lyric;
+            existingTrack.data_sheet = track.data_sheet;
+            existingTrack.track = track.track || undefined;
             await existingTrack.save();
+            if (track.track && track.track !== previousAudio) {
+              await attachFile({ fileId: track.track, refId: existingTrack._id, kind: 'ComponentCdTrack', field: 'track' });
+              await detachFile(previousAudio, existingTrack._id);
+              await deleteFileIfOrphan(previousAudio);
+            } else if (!track.track && previousAudio) {
+              await detachFile(previousAudio, existingTrack._id);
+              await deleteFileIfOrphan(previousAudio);
+            }
             newTrackRefs.push({ ref: existingTrack._id.toString(), kind: 'ComponentCdTrack' });
             keepTrackIds.push(existingTrack._id.toString());
           }
         } else {
-          const created = await CdTrackModel.create({ name: track.name, composers: track.composers });
+          const created = await CdTrackModel.create({
+            name: track.name,
+            publishing_company: track.publishing_company,
+            composers: track.composers,
+            time: track.time,
+            track: track.track || undefined,
+            lyric: track.lyric,
+            data_sheet: track.data_sheet
+          });
+          if (track.track) {
+            await attachFile({ fileId: track.track, refId: created._id, kind: 'ComponentCdTrack', field: 'track' });
+          }
           newTrackRefs.push({ ref: created._id.toString(), kind: 'ComponentCdTrack' });
           keepTrackIds.push(created._id.toString());
         }
@@ -80,7 +105,15 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       const oldTrackIds = cd.track?.map((t) => t.ref?.toString()).filter(Boolean) as string[];
       for (const oldId of oldTrackIds) {
         if (!keepTrackIds.includes(oldId)) {
-          await CdTrackModel.findByIdAndDelete(oldId);
+          const toRemove = await CdTrackModel.findById(oldId);
+          if (toRemove) {
+            const audioId = toRemove.track?.toString();
+            await toRemove.deleteOne();
+            if (audioId) {
+              await detachFile(audioId, toRemove._id);
+              await deleteFileIfOrphan(audioId);
+            }
+          }
         }
       }
 
@@ -121,7 +154,15 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
 
   await cd.deleteOne();
   if (trackIds?.length) {
-    await CdTrackModel.deleteMany({ _id: { $in: trackIds } });
+    const tracks = await CdTrackModel.find({ _id: { $in: trackIds } });
+    for (const track of tracks) {
+      const audioId = track.track?.toString();
+      await track.deleteOne();
+      if (audioId) {
+        await detachFile(audioId, track._id);
+        await deleteFileIfOrphan(audioId);
+      }
+    }
   }
 
   if (coverId) {

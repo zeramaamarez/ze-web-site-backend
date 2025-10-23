@@ -5,6 +5,7 @@ import CdTrackModel from '@/lib/models/CdTrack';
 import { cdTrackSchema } from '@/lib/validations/cd';
 import { requireAdmin } from '@/lib/api';
 import { isObjectId } from '@/lib/utils';
+import { attachFile } from '@/lib/upload';
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const authResult = await requireAdmin();
@@ -26,7 +27,18 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: 'CD não encontrado' }, { status: 404 });
   }
 
-  const track = await CdTrackModel.create(parsed.data);
+  const track = await CdTrackModel.create({
+    name: parsed.data.name,
+    publishing_company: parsed.data.publishing_company,
+    composers: parsed.data.composers,
+    time: parsed.data.time,
+    track: parsed.data.track || undefined,
+    lyric: parsed.data.lyric,
+    data_sheet: parsed.data.data_sheet
+  });
+  if (parsed.data.track) {
+    await attachFile({ fileId: parsed.data.track, refId: track._id, kind: 'ComponentCdTrack', field: 'track' });
+  }
   cd.track = [...(cd.track || []), { ref: track._id, kind: 'ComponentCdTrack' }];
   cd.updated_by = authResult.session.user!.id;
   await cd.save();
@@ -35,7 +47,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
     track: {
       _id: track._id.toString(),
       name: track.name,
-      composers: track.composers
+      publishing_company: track.publishing_company,
+      composers: track.composers,
+      time: track.time,
+      track: track.track?.toString(),
+      lyric: track.lyric,
+      data_sheet: track.data_sheet
     }
   }, { status: 201 });
 }

@@ -20,7 +20,7 @@ function buildSort(sortParam?: string | null) {
 async function serializeCd(id: string) {
   return CdModel.findById(id)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'CdTrack' })
+    .populate({ path: 'track.ref', model: 'CdTrack', populate: { path: 'track', model: 'UploadFile' } })
     .lean();
 }
 
@@ -96,7 +96,18 @@ export async function POST(request: Request) {
     if (parsed.data.tracks?.length) {
       const trackRefs = [] as { ref: string; kind: string }[];
       for (const track of parsed.data.tracks) {
-        const trackDoc = await CdTrackModel.create({ name: track.name, composers: track.composers });
+        const trackDoc = await CdTrackModel.create({
+          name: track.name,
+          publishing_company: track.publishing_company,
+          composers: track.composers,
+          time: track.time,
+          track: track.track || undefined,
+          lyric: track.lyric,
+          data_sheet: track.data_sheet
+        });
+        if (track.track) {
+          await attachFile({ fileId: track.track, refId: trackDoc._id, kind: 'ComponentCdTrack', field: 'track' });
+        }
         trackRefs.push({ ref: trackDoc._id.toString(), kind: 'ComponentCdTrack' });
       }
       cd.track = trackRefs.map((track) => ({ ref: track.ref, kind: track.kind }));

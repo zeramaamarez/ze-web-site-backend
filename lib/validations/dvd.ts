@@ -5,6 +5,7 @@ export const dvdTrackSchema = z.object({
   name: z.string().min(1),
   composers: z.string().optional(),
   time: z.string().optional(),
+  publishing_company: z.string().optional(),
   lyric: z.string().optional()
 });
 

@@ -99,6 +99,7 @@ export async function POST(request: Request) {
         const trackDoc = await DvdTrackModel.create({
           name: track.name,
           composers: track.composers,
+          publishing_company: track.publishing_company,
           time: track.time,
           lyric: track.lyric
         });

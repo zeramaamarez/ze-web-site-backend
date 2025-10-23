@@ -66,6 +66,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
           if (existingTrack) {
             existingTrack.name = track.name;
             existingTrack.composers = track.composers;
+            existingTrack.publishing_company = track.publishing_company;
             existingTrack.time = track.time;
             existingTrack.lyric = track.lyric;
             await existingTrack.save();
@@ -76,6 +77,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
           const created = await DvdTrackModel.create({
             name: track.name,
             composers: track.composers,
+            publishing_company: track.publishing_company,
             time: track.time,
             lyric: track.lyric
           });

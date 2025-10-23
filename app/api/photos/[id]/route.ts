@@ -1,0 +1,99 @@
+import { NextResponse } from 'next/server';
+import { connectMongo } from '@/lib/mongodb';
+import PhotoModel from '@/lib/models/Photo';
+import { photoSchema } from '@/lib/validations/photo';
+import { requireAdmin } from '@/lib/api';
+import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
+import { isObjectId } from '@/lib/utils';
+
+export async function GET(_: Request, { params }: { params: { id: string } }) {
+  const authResult = await requireAdmin();
+  if ('response' in authResult) return authResult.response;
+
+  if (!isObjectId(params.id)) {
+    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
+  }
+
+  await connectMongo();
+  const photo = await PhotoModel.findById(params.id).populate('images').lean();
+  if (!photo) {
+    return NextResponse.json({ error: 'Galeria não encontrada' }, { status: 404 });
+  }
+
+  return NextResponse.json(photo);
+}
+
+export async function PUT(request: Request, { params }: { params: { id: string } }) {
+  const authResult = await requireAdmin();
+  if ('response' in authResult) return authResult.response;
+
+  if (!isObjectId(params.id)) {
+    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
+  }
+
+  try {
+    const body = await request.json();
+    const parsed = photoSchema.partial().safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 400 });
+    }
+
+    await connectMongo();
+    const photo = await PhotoModel.findById(params.id);
+    if (!photo) {
+      return NextResponse.json({ error: 'Galeria não encontrada' }, { status: 404 });
+    }
+
+    const previousImages = photo.images?.map((id) => id.toString()) ?? [];
+
+    Object.assign(photo, parsed.data, { updated_by: authResult.session.user!.id });
+
+    if (Object.prototype.hasOwnProperty.call(parsed.data, 'images')) {
+      const newImages = parsed.data.images ?? [];
+      photo.images = newImages as any;
+
+      const toAttach = newImages.filter((id) => !previousImages.includes(id));
+      const toDetach = previousImages.filter((id) => !newImages.includes(id));
+
+      for (const fileId of toAttach) {
+        await attachFile({ fileId, refId: photo._id, kind: 'Photo', field: 'images' });
+      }
+      for (const fileId of toDetach) {
+        await detachFile(fileId, photo._id);
+        await deleteFileIfOrphan(fileId);
+      }
+    }
+
+    await photo.save();
+
+    return NextResponse.json(await PhotoModel.findById(photo._id).populate('images').lean());
+  } catch (error) {
+    console.error('Photo update error', error);
+    return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });
+  }
+}
+
+export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+  const authResult = await requireAdmin();
+  if ('response' in authResult) return authResult.response;
+
+  if (!isObjectId(params.id)) {
+    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
+  }
+
+  await connectMongo();
+  const photo = await PhotoModel.findById(params.id);
+  if (!photo) {
+    return NextResponse.json({ error: 'Galeria não encontrada' }, { status: 404 });
+  }
+
+  const imageIds = photo.images?.map((id) => id.toString()) ?? [];
+  await photo.deleteOne();
+
+  for (const fileId of imageIds) {
+    await detachFile(fileId, photo._id);
+    await deleteFileIfOrphan(fileId);
+  }
+
+  return NextResponse.json({ message: 'Galeria removida' });
+}
