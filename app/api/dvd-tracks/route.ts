@@ -3,6 +3,7 @@ import { connectMongo } from '@/lib/mongodb';
 import DvdTrackModel from '@/lib/models/DvdTrack';
 import { dvdTrackSchema } from '@/lib/validations/dvd';
 import { requireAdmin } from '@/lib/api';
+import { attachFile } from '@/lib/upload';
 
 export async function GET(request: Request) {
   const authResult = await requireAdmin();
@@ -37,5 +38,8 @@ export async function POST(request: Request) {
 
   await connectMongo();
   const track = await DvdTrackModel.create(parsed.data);
+  if (parsed.data.track) {
+    await attachFile({ fileId: parsed.data.track, refId: track._id, kind: 'DvdTrack', field: 'track' });
+  }
   return NextResponse.json(track, { status: 201 });
 }

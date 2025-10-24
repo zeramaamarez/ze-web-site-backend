@@ -2,14 +2,6 @@ import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 import { applyUniqueSlug } from '@/lib/models/plugins/uniqueSlug';
 import { applyStatusFields } from '@/lib/models/plugins/status';
 
-const CdTrackRefSchema = new Schema(
-  {
-    ref: { type: Types.ObjectId, ref: 'CdTrack', required: true },
-    kind: { type: String, default: 'ComponentCdTrack' }
-  },
-  { _id: false }
-);
-
 const CdSchema = new Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -18,7 +10,7 @@ const CdSchema = new Schema(
     info: String,
     slug: { type: String, unique: true, index: true },
     cover: { type: Types.ObjectId, ref: 'UploadFile' },
-    track: [CdTrackRefSchema],
+    track: [{ type: Types.ObjectId, ref: 'CdTrack' }],
     published_at: { type: Date, default: null },
     created_by: { type: Types.ObjectId, ref: 'Admin' },
     updated_by: { type: Types.ObjectId, ref: 'Admin' }

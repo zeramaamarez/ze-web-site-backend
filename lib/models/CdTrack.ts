@@ -6,11 +6,11 @@ const CdTrackSchema = new Schema(
     publishing_company: String,
     composers: String,
     time: String,
+    lyric: String,
     track: { type: Types.ObjectId, ref: 'UploadFile' },
-    lyric: { type: Types.ObjectId, ref: 'Lyric' },
     data_sheet: String
   },
-  { timestamps: true }
+  { collection: 'cd_tracks', timestamps: false }
 );
 
 CdTrackSchema.index({ name: 'text', composers: 'text', publishing_company: 'text' });

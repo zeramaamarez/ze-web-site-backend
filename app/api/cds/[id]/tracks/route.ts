@@ -37,9 +37,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
     data_sheet: parsed.data.data_sheet
   });
   if (parsed.data.track) {
-    await attachFile({ fileId: parsed.data.track, refId: track._id, kind: 'ComponentCdTrack', field: 'track' });
+    await attachFile({ fileId: parsed.data.track, refId: track._id, kind: 'CdTrack', field: 'track' });
   }
-  cd.track = [...(cd.track || []), { ref: track._id, kind: 'ComponentCdTrack' }];
+  cd.track = [...(cd.track || []), track._id];
   cd.updated_by = authResult.session.user!.id;
   await cd.save();
 

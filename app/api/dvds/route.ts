@@ -42,7 +42,11 @@ function buildSort(sortParam?: string | null, orderParam?: string | null) {
 async function serializeDvd(id: string) {
   return DvdModel.findById(id)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
+    .populate({
+      path: 'track',
+      model: 'DvdTrack',
+      populate: [{ path: 'track', model: 'UploadFile' }]
+    })
     .lean();
 }
 
@@ -95,7 +99,11 @@ export async function GET(request: Request) {
   const query = DvdModel.find(filter)
     .sort(sort)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
+    .populate({
+      path: 'track',
+      model: 'DvdTrack',
+      populate: [{ path: 'track', model: 'UploadFile' }]
+    })
     .lean();
 
   if (typeof start === 'number' && start > 0) {
@@ -118,7 +126,9 @@ export async function GET(request: Request) {
       const rawLyric = track?.lyric as unknown;
       if (!rawLyric) continue;
       if (typeof rawLyric === 'string') {
-        lyricIds.add(rawLyric);
+        if (/^[a-fA-F0-9]{24}$/.test(rawLyric)) {
+          lyricIds.add(rawLyric);
+        }
       } else if (isObjectIdLike(rawLyric)) {
         lyricIds.add(rawLyric.toString());
       } else if (typeof rawLyric === 'object' && rawLyric !== null) {
@@ -175,18 +185,22 @@ export async function POST(request: Request) {
     });
 
     if (parsed.data.tracks?.length) {
-      const trackRefs = [] as { ref: string; kind: string }[];
+      const trackIds: string[] = [];
       for (const track of parsed.data.tracks) {
         const trackDoc = await DvdTrackModel.create({
           name: track.name,
           composers: track.composers,
           publishing_company: track.publishing_company,
           time: track.time,
-          lyric: track.lyric
+          lyric: track.lyric,
+          track: track.track || undefined
         });
-        trackRefs.push({ ref: trackDoc._id.toString(), kind: 'ComponentDvdTrack' });
+        if (track.track) {
+          await attachFile({ fileId: track.track, refId: trackDoc._id, kind: 'DvdTrack', field: 'track' });
+        }
+        trackIds.push(trackDoc._id.toString());
       }
-      dvd.track = trackRefs.map((track) => ({ ref: track.ref, kind: track.kind }));
+      dvd.track = trackIds;
       await dvd.save();
     }
 

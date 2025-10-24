@@ -43,12 +43,9 @@ async function serializeCd(id: string) {
   return CdModel.findById(id)
     .populate('cover')
     .populate({
-      path: 'track.ref',
+      path: 'track',
       model: 'CdTrack',
-      populate: [
-        { path: 'track', model: 'UploadFile' },
-        { path: 'lyric', model: 'Lyric' }
-      ]
+      populate: [{ path: 'track', model: 'UploadFile' }]
     })
     .lean();
 }
@@ -60,7 +57,9 @@ function collectLyricIdsFromCd(cd: { track?: unknown[] }) {
     const rawLyric = track?.lyric as unknown;
     if (!rawLyric) continue;
     if (typeof rawLyric === 'string') {
-      ids.add(rawLyric);
+      if (/^[a-fA-F0-9]{24}$/.test(rawLyric)) {
+        ids.add(rawLyric);
+      }
     } else if (isObjectIdLike(rawLyric)) {
       ids.add(rawLyric.toString());
     } else if (typeof rawLyric === 'object' && rawLyric !== null) {
@@ -158,12 +157,9 @@ export async function GET(request: Request) {
     .sort(sort)
     .populate('cover')
     .populate({
-      path: 'track.ref',
+      path: 'track',
       model: 'CdTrack',
-      populate: [
-        { path: 'track', model: 'UploadFile' },
-        { path: 'lyric', model: 'Lyric' }
-      ]
+      populate: [{ path: 'track', model: 'UploadFile' }]
     })
     .lean();
 
@@ -217,7 +213,7 @@ export async function POST(request: Request) {
     });
 
     if (parsed.data.tracks?.length) {
-      const trackRefs = [] as { ref: string; kind: string }[];
+      const trackIds: string[] = [];
       for (const track of parsed.data.tracks) {
         const trackDoc = await CdTrackModel.create({
           name: track.name,
@@ -229,11 +225,11 @@ export async function POST(request: Request) {
           data_sheet: track.data_sheet
         });
         if (track.track) {
-          await attachFile({ fileId: track.track, refId: trackDoc._id, kind: 'ComponentCdTrack', field: 'track' });
+          await attachFile({ fileId: track.track, refId: trackDoc._id, kind: 'CdTrack', field: 'track' });
         }
-        trackRefs.push({ ref: trackDoc._id.toString(), kind: 'ComponentCdTrack' });
+        trackIds.push(trackDoc._id.toString());
       }
-      cd.track = trackRefs.map((track) => ({ ref: track.ref, kind: track.kind }));
+      cd.track = trackIds;
       await cd.save();
     }
 

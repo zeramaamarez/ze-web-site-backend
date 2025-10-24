@@ -12,7 +12,11 @@ import { isObjectIdLike, normalizeDocument, normalizeTrackList, normalizeUploadF
 async function serializeDvd(id: string) {
   return DvdModel.findById(id)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
+    .populate({
+      path: 'track',
+      model: 'DvdTrack',
+      populate: [{ path: 'track', model: 'UploadFile' }]
+    })
     .lean();
 }
 
@@ -36,7 +40,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   const dvd = await DvdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
+    .populate({
+      path: 'track',
+      model: 'DvdTrack',
+      populate: [{ path: 'track', model: 'UploadFile' }]
+    })
     .lean();
 
   if (!dvd) {
@@ -49,7 +57,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     const rawLyric = track?.lyric as unknown;
     if (!rawLyric) continue;
     if (typeof rawLyric === 'string') {
-      lyricIds.add(rawLyric);
+      if (/^[a-fA-F0-9]{24}$/.test(rawLyric)) {
+        lyricIds.add(rawLyric);
+      }
     } else if (isObjectIdLike(rawLyric)) {
       lyricIds.add(rawLyric.toString());
     } else if (typeof rawLyric === 'object' && rawLyric !== null) {
@@ -105,20 +115,28 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     Object.assign(dvd, parsed.data, { updated_by: authResult.session.user!.id });
 
     if (parsed.data.tracks) {
-      const newTrackRefs: { ref: string; kind: string }[] = [];
       const keepTrackIds: string[] = [];
 
       for (const track of parsed.data.tracks) {
         if (track._id && isObjectId(track._id)) {
           const existingTrack = await DvdTrackModel.findById(track._id);
           if (existingTrack) {
+            const previousAudio = existingTrack.track?.toString();
             existingTrack.name = track.name;
             existingTrack.composers = track.composers;
             existingTrack.publishing_company = track.publishing_company;
             existingTrack.time = track.time;
             existingTrack.lyric = track.lyric;
+            existingTrack.track = track.track || undefined;
             await existingTrack.save();
-            newTrackRefs.push({ ref: existingTrack._id.toString(), kind: 'ComponentDvdTrack' });
+            if (track.track && track.track !== previousAudio) {
+              await attachFile({ fileId: track.track, refId: existingTrack._id, kind: 'DvdTrack', field: 'track' });
+              await detachFile(previousAudio, existingTrack._id);
+              await deleteFileIfOrphan(previousAudio);
+            } else if (!track.track && previousAudio) {
+              await detachFile(previousAudio, existingTrack._id);
+              await deleteFileIfOrphan(previousAudio);
+            }
             keepTrackIds.push(existingTrack._id.toString());
           }
         } else {
@@ -127,21 +145,35 @@ export async function PUT(request: Request, { params }: { params: { id: string }
             composers: track.composers,
             publishing_company: track.publishing_company,
             time: track.time,
-            lyric: track.lyric
+            lyric: track.lyric,
+            track: track.track || undefined
           });
-          newTrackRefs.push({ ref: created._id.toString(), kind: 'ComponentDvdTrack' });
+          if (track.track) {
+            await attachFile({ fileId: track.track, refId: created._id, kind: 'DvdTrack', field: 'track' });
+          }
           keepTrackIds.push(created._id.toString());
         }
       }
 
-      const oldTrackIds = dvd.track?.map((t) => t.ref?.toString()).filter(Boolean) as string[];
+      const oldTrackIds = (dvd.track ?? [])
+        .map((value) => (typeof value === 'string' ? value : value?.toString()))
+        .filter((value): value is string => Boolean(value));
+
       for (const oldId of oldTrackIds) {
         if (!keepTrackIds.includes(oldId)) {
-          await DvdTrackModel.findByIdAndDelete(oldId);
+          const toRemove = await DvdTrackModel.findById(oldId);
+          if (toRemove) {
+            const audioId = toRemove.track?.toString();
+            await toRemove.deleteOne();
+            if (audioId) {
+              await detachFile(audioId, toRemove._id);
+              await deleteFileIfOrphan(audioId);
+            }
+          }
         }
       }
 
-      dvd.track = newTrackRefs.map((ref) => ({ ref: ref.ref, kind: ref.kind }));
+      dvd.track = keepTrackIds;
     }
 
     await dvd.save();
@@ -174,11 +206,21 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   }
 
   const coverId = dvd.cover?.toString();
-  const trackIds = dvd.track?.map((t) => t.ref?.toString()).filter(Boolean) as string[];
+  const trackIds = (dvd.track ?? [])
+    .map((value) => (typeof value === 'string' ? value : value?.toString()))
+    .filter((value): value is string => Boolean(value));
 
   await dvd.deleteOne();
   if (trackIds?.length) {
-    await DvdTrackModel.deleteMany({ _id: { $in: trackIds } });
+    const tracks = await DvdTrackModel.find({ _id: { $in: trackIds } });
+    for (const track of tracks) {
+      const audioId = track.track?.toString();
+      await track.deleteOne();
+      if (audioId) {
+        await detachFile(audioId, track._id);
+        await deleteFileIfOrphan(audioId);
+      }
+    }
   }
 
   if (coverId) {

@@ -5,6 +5,7 @@ import DvdTrackModel from '@/lib/models/DvdTrack';
 import { dvdTrackSchema } from '@/lib/validations/dvd';
 import { requireAdmin } from '@/lib/api';
 import { isObjectId } from '@/lib/utils';
+import { attachFile } from '@/lib/upload';
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const authResult = await requireAdmin();
@@ -31,9 +32,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     composers: parsed.data.composers,
     publishing_company: parsed.data.publishing_company,
     time: parsed.data.time,
-    lyric: parsed.data.lyric
+    lyric: parsed.data.lyric,
+    track: parsed.data.track || undefined
   });
-  dvd.track = [...(dvd.track || []), { ref: track._id, kind: 'ComponentDvdTrack' }];
+  if (parsed.data.track) {
+    await attachFile({ fileId: parsed.data.track, refId: track._id, kind: 'DvdTrack', field: 'track' });
+  }
+  dvd.track = [...(dvd.track || []), track._id];
   dvd.updated_by = authResult.session.user!.id;
   await dvd.save();
 
@@ -44,7 +49,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
       composers: track.composers,
       publishing_company: track.publishing_company,
       time: track.time,
-      lyric: track.lyric
+      lyric: track.lyric,
+      track: track.track?.toString()
     }
   }, { status: 201 });
 }

@@ -6,7 +6,8 @@ export const dvdTrackSchema = z.object({
   composers: z.string().optional(),
   time: z.string().optional(),
   publishing_company: z.string().optional(),
-  lyric: z.string().optional()
+  lyric: z.string().optional(),
+  track: z.string().optional().nullable()
 });
 
 const vimeoRegex = /^(https?:\/\/)?(www\.|player\.)?vimeo\.com\/(\d+|video\/\d+|channels\/.+\/\d+|groups\/.+\/videos\/\d+)/i;

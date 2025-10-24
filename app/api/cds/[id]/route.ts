@@ -12,12 +12,9 @@ async function serializeCd(id: string) {
   return CdModel.findById(id)
     .populate('cover')
     .populate({
-      path: 'track.ref',
+      path: 'track',
       model: 'CdTrack',
-      populate: [
-        { path: 'track', model: 'UploadFile' },
-        { path: 'lyric', model: 'Lyric' }
-      ]
+      populate: [{ path: 'track', model: 'UploadFile' }]
     })
     .lean();
 }
@@ -29,12 +26,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const cd = await CdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
     .populate('cover')
     .populate({
-      path: 'track.ref',
+      path: 'track',
       model: 'CdTrack',
-      populate: [
-        { path: 'track', model: 'UploadFile' },
-        { path: 'lyric', model: 'Lyric' }
-      ]
+      populate: [{ path: 'track', model: 'UploadFile' }]
     })
     .lean();
 
@@ -71,7 +65,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     Object.assign(cd, parsed.data, { updated_by: authResult.session.user!.id });
 
     if (parsed.data.tracks) {
-      const newTrackRefs: { ref: string; kind: string }[] = [];
       const keepTrackIds: string[] = [];
 
       for (const track of parsed.data.tracks) {
@@ -88,14 +81,13 @@ export async function PUT(request: Request, { params }: { params: { id: string }
             existingTrack.track = track.track || undefined;
             await existingTrack.save();
             if (track.track && track.track !== previousAudio) {
-              await attachFile({ fileId: track.track, refId: existingTrack._id, kind: 'ComponentCdTrack', field: 'track' });
+              await attachFile({ fileId: track.track, refId: existingTrack._id, kind: 'CdTrack', field: 'track' });
               await detachFile(previousAudio, existingTrack._id);
               await deleteFileIfOrphan(previousAudio);
             } else if (!track.track && previousAudio) {
               await detachFile(previousAudio, existingTrack._id);
               await deleteFileIfOrphan(previousAudio);
             }
-            newTrackRefs.push({ ref: existingTrack._id.toString(), kind: 'ComponentCdTrack' });
             keepTrackIds.push(existingTrack._id.toString());
           }
         } else {
@@ -109,14 +101,16 @@ export async function PUT(request: Request, { params }: { params: { id: string }
             data_sheet: track.data_sheet
           });
           if (track.track) {
-            await attachFile({ fileId: track.track, refId: created._id, kind: 'ComponentCdTrack', field: 'track' });
+            await attachFile({ fileId: track.track, refId: created._id, kind: 'CdTrack', field: 'track' });
           }
-          newTrackRefs.push({ ref: created._id.toString(), kind: 'ComponentCdTrack' });
           keepTrackIds.push(created._id.toString());
         }
       }
 
-      const oldTrackIds = cd.track?.map((t) => t.ref?.toString()).filter(Boolean) as string[];
+      const oldTrackIds = (cd.track ?? [])
+        .map((value) => (typeof value === 'string' ? value : value?.toString()))
+        .filter((value): value is string => Boolean(value));
+
       for (const oldId of oldTrackIds) {
         if (!keepTrackIds.includes(oldId)) {
           const toRemove = await CdTrackModel.findById(oldId);
@@ -131,7 +125,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         }
       }
 
-      cd.track = newTrackRefs.map((ref) => ({ ref: ref.ref, kind: ref.kind }));
+      cd.track = keepTrackIds;
     }
 
     await cd.save();
@@ -164,7 +158,9 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   }
 
   const coverId = cd.cover?.toString();
-  const trackIds = cd.track?.map((t) => t.ref?.toString()).filter(Boolean) as string[];
+  const trackIds = (cd.track ?? [])
+    .map((value) => (typeof value === 'string' ? value : value?.toString()))
+    .filter((value): value is string => Boolean(value));
 
   await cd.deleteOne();
   if (trackIds?.length) {
