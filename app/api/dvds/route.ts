@@ -32,7 +32,7 @@ function buildSort(sortParam?: string | null, orderParam?: string | null) {
 async function serializeDvd(id: string) {
   return DvdModel.findById(id)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'DvdTrack' })
+    .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
     .lean();
 }
 
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
   const query = DvdModel.find(filter)
     .sort(sort)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'DvdTrack' })
+    .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
     .lean();
 
   if (typeof start === 'number' && start > 0) {

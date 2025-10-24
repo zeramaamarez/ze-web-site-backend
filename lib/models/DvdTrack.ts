@@ -1,4 +1,4 @@
-import { models, model, Schema, type InferSchemaType } from 'mongoose';
+import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 
 const DvdTrackSchema = new Schema(
   {
@@ -6,7 +6,7 @@ const DvdTrackSchema = new Schema(
     composers: String,
     time: String,
     publishing_company: String,
-    lyric: String
+    lyric: { type: Types.ObjectId, ref: 'Lyric' }
   },
   { timestamps: true }
 );

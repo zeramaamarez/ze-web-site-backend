@@ -11,7 +11,14 @@ import { formatCdForResponse } from '@/app/api/cds/route';
 async function serializeCd(id: string) {
   return CdModel.findById(id)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'CdTrack', populate: { path: 'track', model: 'UploadFile' } })
+    .populate({
+      path: 'track.ref',
+      model: 'CdTrack',
+      populate: [
+        { path: 'track', model: 'UploadFile' },
+        { path: 'lyric', model: 'Lyric' }
+      ]
+    })
     .lean();
 }
 
@@ -21,7 +28,14 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   const cd = await CdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'CdTrack', populate: { path: 'track', model: 'UploadFile' } })
+    .populate({
+      path: 'track.ref',
+      model: 'CdTrack',
+      populate: [
+        { path: 'track', model: 'UploadFile' },
+        { path: 'lyric', model: 'Lyric' }
+      ]
+    })
     .lean();
 
   if (!cd) {

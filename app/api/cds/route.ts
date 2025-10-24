@@ -38,7 +38,14 @@ function buildSort(sortParam?: string | null, orderParam?: string | null) {
 async function serializeCd(id: string) {
   return CdModel.findById(id)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'CdTrack', populate: { path: 'track', model: 'UploadFile' } })
+    .populate({
+      path: 'track.ref',
+      model: 'CdTrack',
+      populate: [
+        { path: 'track', model: 'UploadFile' },
+        { path: 'lyric', model: 'Lyric' }
+      ]
+    })
     .lean();
 }
 
@@ -118,7 +125,14 @@ export async function GET(request: Request) {
   const query = CdModel.find(filter)
     .sort(sort)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'CdTrack', populate: { path: 'track', model: 'UploadFile' } })
+    .populate({
+      path: 'track.ref',
+      model: 'CdTrack',
+      populate: [
+        { path: 'track', model: 'UploadFile' },
+        { path: 'lyric', model: 'Lyric' }
+      ]
+    })
     .lean();
 
   if (typeof start === 'number' && start > 0) {

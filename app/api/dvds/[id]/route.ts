@@ -12,7 +12,7 @@ import { isObjectIdLike, normalizeDocument, normalizeTrackList, withPublishedFla
 async function serializeDvd(id: string) {
   return DvdModel.findById(id)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'DvdTrack' })
+    .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
     .lean();
 }
 
@@ -22,7 +22,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   const dvd = await DvdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'DvdTrack' })
+    .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
     .lean();
 
   if (!dvd) {

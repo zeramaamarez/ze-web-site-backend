@@ -28,7 +28,7 @@ const UploadFileSchema = new Schema(
     name: String,
     alternativeText: String,
     caption: String,
-    hash: { type: String, index: true },
+    hash: { type: String },
     ext: String,
     mime: String,
     size: Number,

@@ -7,7 +7,7 @@ const CdTrackSchema = new Schema(
     composers: String,
     time: String,
     track: { type: Types.ObjectId, ref: 'UploadFile' },
-    lyric: String,
+    lyric: { type: Types.ObjectId, ref: 'Lyric' },
     data_sheet: String
   },
   { timestamps: true }
