@@ -7,11 +7,14 @@ import { attachFile } from '@/lib/upload';
 import { requireAdmin } from '@/lib/api';
 import LyricModel from '@/lib/models/Lyric';
 import {
+  buildPaginatedResponse,
+  buildRegexFilter,
   isObjectIdLike,
   normalizeDocument,
   normalizeTrackList,
   normalizeUploadFile,
   parseLegacyPagination,
+  resolveStatusFilter,
   withPublishedFlag
 } from '@/lib/legacy';
 
@@ -117,9 +120,37 @@ export async function GET(request: Request) {
   const sortParam = searchParams.get('_sort') || searchParams.get('sort');
   const [sortField, sortDirection] = sortParam?.split(':') ?? [];
   const sort = buildSort(sortField || undefined, sortDirection || searchParams.get('order'));
-  const { start, limit } = parseLegacyPagination(searchParams);
+  const search = searchParams.get('search');
+  const company = searchParams.get('company');
+  const year = searchParams.get('year');
+  const { start, limit, shouldPaginate, page } = parseLegacyPagination(searchParams);
 
-  const filter: Record<string, unknown> = { published_at: { $ne: null } };
+  const filters: Record<string, unknown>[] = [];
+  const statusFilter = resolveStatusFilter(searchParams, { defaultStatus: shouldPaginate ? 'all' : undefined });
+  if (statusFilter) {
+    filters.push(statusFilter);
+  }
+
+  if (search) {
+    const regex = buildRegexFilter(search);
+    filters.push({
+      $or: [
+        { title: regex },
+        { company: regex },
+        { info: regex }
+      ]
+    });
+  }
+
+  if (company) {
+    filters.push({ company: buildRegexFilter(company) });
+  }
+
+  if (year) {
+    filters.push({ release_date: buildRegexFilter(year, { startsWith: true }) });
+  }
+
+  const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
 
   await connectMongo();
 
@@ -144,7 +175,10 @@ export async function GET(request: Request) {
     query.limit(limit);
   }
 
-  const cds = await query;
+  const [cds, total] = await Promise.all([
+    query,
+    shouldPaginate ? CdModel.countDocuments(filter) : Promise.resolve(undefined)
+  ]);
 
   const lyricIds = new Set<string>();
   for (const cd of cds) {
@@ -155,6 +189,10 @@ export async function GET(request: Request) {
   const lyricMap = await buildLyricMap(lyricIds);
 
   const formatted = await Promise.all(cds.map((cd) => formatCdForResponse(cd, lyricMap)));
+
+  if (shouldPaginate) {
+    return NextResponse.json(buildPaginatedResponse(formatted, { total, limit: limit ?? undefined, start, page }));
+  }
 
   return NextResponse.json(formatted);
 }

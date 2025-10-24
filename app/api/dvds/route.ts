@@ -7,11 +7,14 @@ import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
 import LyricModel from '@/lib/models/Lyric';
 import {
+  buildPaginatedResponse,
+  buildRegexFilter,
   isObjectIdLike,
   normalizeDocument,
   normalizeTrackList,
   normalizeUploadFile,
   parseLegacyPagination,
+  resolveStatusFilter,
   withPublishedFlag
 } from '@/lib/legacy';
 
@@ -63,21 +66,27 @@ export async function GET(request: Request) {
   const sort = buildSort(sortField || undefined, sortDirection || searchParams.get('order'));
   const search = searchParams.get('search');
   const yearFilter = searchParams.get('year');
-  const { start, limit } = parseLegacyPagination(searchParams);
+  const { start, limit, shouldPaginate, page } = parseLegacyPagination(searchParams);
 
-  const filters: Record<string, unknown>[] = [{ published_at: { $ne: null } }];
+  const filters: Record<string, unknown>[] = [];
+  const statusFilter = resolveStatusFilter(searchParams, { defaultStatus: shouldPaginate ? 'all' : undefined });
+  if (statusFilter) {
+    filters.push(statusFilter);
+  }
+
   if (search) {
+    const regex = buildRegexFilter(search);
     filters.push({
       $or: [
-        { title: { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } },
-        { release_date: { $regex: search, $options: 'i' } }
+        { title: regex },
+        { company: regex },
+        { release_date: regex }
       ]
     });
   }
 
   if (yearFilter) {
-    filters.push({ release_date: { $regex: new RegExp(yearFilter, 'i') } });
+    filters.push({ release_date: buildRegexFilter(yearFilter, { startsWith: true }) });
   }
 
   const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
@@ -97,7 +106,10 @@ export async function GET(request: Request) {
     query.limit(limit);
   }
 
-  const dvds = await query;
+  const [dvds, total] = await Promise.all([
+    query,
+    shouldPaginate ? DvdModel.countDocuments(filter) : Promise.resolve(undefined)
+  ]);
 
   const lyricIds = new Set<string>();
   for (const dvd of dvds) {
@@ -135,6 +147,10 @@ export async function GET(request: Request) {
   );
 
   const formatted = dvds.map((dvd) => formatDvd(dvd, lyricMap));
+
+  if (shouldPaginate) {
+    return NextResponse.json(buildPaginatedResponse(formatted, { total, limit: limit ?? undefined, start, page }));
+  }
 
   return NextResponse.json(formatted);
 }

@@ -106,6 +106,16 @@ export function normalizeUploadFileList(value: unknown) {
     .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object'));
 }
 
+export function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|\[\]\\]/g, '\\$&');
+}
+
+export function buildRegexFilter(value: string, { startsWith = false }: { startsWith?: boolean } = {}) {
+  const escaped = escapeRegExp(value.trim());
+  const pattern = startsWith ? `^${escaped}` : escaped;
+  return { $regex: pattern, $options: 'i' } as const;
+}
+
 export function normalizeLyric(lyric: unknown) {
   const normalized = normalizeDocument(lyric);
   if (normalized && typeof normalized === 'object') {
@@ -180,12 +190,111 @@ export function withPublishedFlag<T extends AnyRecord>(doc: T, publishedAtField:
 export function parseLegacyPagination(searchParams: URLSearchParams) {
   const limitParam = searchParams.get('_limit') ?? searchParams.get('limit');
   const startParam = searchParams.get('_start') ?? searchParams.get('start');
+  const pageParam = searchParams.get('page');
+  const pageSizeParam = searchParams.get('pageSize') ?? searchParams.get('page_size');
 
   const parsedLimit = limitParam != null ? Number.parseInt(limitParam, 10) : Number.NaN;
   const parsedStart = startParam != null ? Number.parseInt(startParam, 10) : Number.NaN;
+  const parsedPage = pageParam != null ? Number.parseInt(pageParam, 10) : Number.NaN;
+  const parsedPageSize = pageSizeParam != null ? Number.parseInt(pageSizeParam, 10) : Number.NaN;
 
-  const limit = Number.isNaN(parsedLimit) ? undefined : parsedLimit;
-  const start = Number.isNaN(parsedStart) ? undefined : Math.max(parsedStart, 0);
+  let limit = Number.isNaN(parsedLimit) ? undefined : Math.max(parsedLimit, 0);
+  let start = Number.isNaN(parsedStart) ? undefined : Math.max(parsedStart, 0);
+  const page = Number.isNaN(parsedPage) ? undefined : Math.max(parsedPage, 1);
+  let pageSize = Number.isNaN(parsedPageSize) ? undefined : Math.max(parsedPageSize, 0);
 
-  return { start, limit } as const;
+  if (page && pageSize) {
+    limit = pageSize;
+    start = (page - 1) * pageSize;
+  } else if (page && limit) {
+    pageSize = limit;
+    start = (page - 1) * limit;
+  } else if (pageSize && !limit) {
+    limit = pageSize;
+  }
+
+  const shouldPaginate = typeof limit === 'number' && limit > 0;
+  const resolvedPageSize = limit ?? pageSize;
+
+  return {
+    start,
+    limit,
+    page,
+    pageSize: resolvedPageSize,
+    shouldPaginate
+  } as const;
+}
+
+export function resolveStatusFilter(
+  searchParams: URLSearchParams,
+  { publishedField = 'published_at', defaultStatus }: { publishedField?: string; defaultStatus?: 'all' | 'published' | 'draft' } = {}
+) {
+  const rawStatus = searchParams.get('status')?.trim().toLowerCase();
+  const publishedParam = searchParams.get('published');
+  const hasPaginationParams = ['page', 'pageSize', 'page_size'].some((param) => searchParams.has(param));
+
+  let status: 'all' | 'published' | 'draft' | undefined;
+  if (rawStatus === 'published' || rawStatus === 'draft' || rawStatus === 'all') {
+    status = rawStatus;
+  } else if (publishedParam === 'false') {
+    status = 'draft';
+  } else if (publishedParam === 'true') {
+    status = 'published';
+  }
+
+  if (!status) {
+    status =
+      defaultStatus ??
+      (hasPaginationParams
+        ? 'all'
+        : 'published');
+  }
+
+  if (status === 'all') {
+    return null;
+  }
+
+  if (status === 'draft') {
+    return { [publishedField]: null } as Record<string, unknown>;
+  }
+
+  return { [publishedField]: { $ne: null } } as Record<string, unknown>;
+}
+
+export interface PaginationMeta {
+  page: number;
+  totalPages: number;
+  total: number;
+  limit: number;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: PaginationMeta;
+}
+
+export function buildPaginatedResponse<T>(
+  items: T[],
+  { total, limit, start, page }: { total?: number; limit?: number; start?: number; page?: number }
+): PaginatedResponse<T> {
+  const effectiveLimit = limit && limit > 0 ? limit : items.length || 1;
+  const totalCount = typeof total === 'number' ? total : items.length;
+  const totalPages = effectiveLimit > 0 ? Math.max(1, Math.ceil(totalCount / effectiveLimit)) : 1;
+  const computedPage = (() => {
+    if (page && page > 0) return page;
+    if (typeof start === 'number' && effectiveLimit > 0) {
+      return Math.floor(start / effectiveLimit) + 1;
+    }
+    return 1;
+  })();
+
+  return {
+    data: items,
+    pagination: {
+      page: computedPage,
+      totalPages,
+      total: totalCount,
+      limit: effectiveLimit
+    }
+  };
 }

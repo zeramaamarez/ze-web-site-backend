@@ -4,7 +4,15 @@ import PhotoModel from '@/lib/models/Photo';
 import { photoSchema } from '@/lib/validations/photo';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import { normalizeDocument, normalizeUploadFileList, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import {
+  buildPaginatedResponse,
+  buildRegexFilter,
+  normalizeDocument,
+  normalizeUploadFileList,
+  parseLegacyPagination,
+  resolveStatusFilter,
+  withPublishedFlag
+} from '@/lib/legacy';
 
 function formatPhoto(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -34,27 +42,38 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const [sortField, sortDirection] = (searchParams.get('_sort') || searchParams.get('sort') || '').split(':');
   const search = searchParams.get('search');
-  const publishedParam = searchParams.get('published');
+  const album = searchParams.get('album');
+  const location = searchParams.get('location');
   const sort = buildSort(sortField || undefined, sortDirection || null);
-  const { start, limit } = parseLegacyPagination(searchParams);
+  const { start, limit, shouldPaginate, page } = parseLegacyPagination(searchParams);
 
-  const andFilters: Record<string, unknown>[] = [];
-  andFilters.push({ published_at: { $ne: null } });
+  const filters: Record<string, unknown>[] = [];
+  const statusFilter = resolveStatusFilter(searchParams, { defaultStatus: shouldPaginate ? 'all' : undefined });
+  if (statusFilter) {
+    filters.push(statusFilter);
+  }
+
   if (search) {
-    andFilters.push({
+    const regex = buildRegexFilter(search);
+    filters.push({
       $or: [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-        { location: { $regex: search, $options: 'i' } }
+        { title: regex },
+        { description: regex },
+        { location: regex },
+        { album: regex }
       ]
     });
   }
 
-  if (publishedParam === 'false') {
-    andFilters.push({ published_at: null });
+  if (album) {
+    filters.push({ album: buildRegexFilter(album) });
   }
 
-  const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
+  if (location) {
+    filters.push({ location: buildRegexFilter(location) });
+  }
+
+  const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
 
   await connectMongo();
   const query = PhotoModel.find(filter).sort(sort).populate('images').lean();
@@ -67,8 +86,15 @@ export async function GET(request: Request) {
     query.limit(limit);
   }
 
-  const photos = await query;
+  const [photos, total] = await Promise.all([
+    query,
+    shouldPaginate ? PhotoModel.countDocuments(filter) : Promise.resolve(undefined)
+  ]);
   const formatted = photos.map((photo) => formatPhoto(photo));
+
+  if (shouldPaginate) {
+    return NextResponse.json(buildPaginatedResponse(formatted, { total, limit: limit ?? undefined, start, page }));
+  }
 
   return NextResponse.json(formatted);
 }

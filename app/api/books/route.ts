@@ -4,7 +4,15 @@ import BookModel from '@/lib/models/Book';
 import { bookSchema } from '@/lib/validations/book';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import { normalizeDocument, normalizeUploadFile, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import {
+  buildPaginatedResponse,
+  buildRegexFilter,
+  normalizeDocument,
+  normalizeUploadFile,
+  parseLegacyPagination,
+  resolveStatusFilter,
+  withPublishedFlag
+} from '@/lib/legacy';
 
 function formatBook(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -32,21 +40,36 @@ function buildSort(sortParam?: string | null, directionParam?: string | null) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const [sortField, sortDirection] = (searchParams.get('_sort') || searchParams.get('sort') || '')
-    .split(':');
+  const [sortField, sortDirection] = (searchParams.get('_sort') || searchParams.get('sort') || '').split(':');
   const sort = buildSort(sortField || undefined, sortDirection || null);
   const search = searchParams.get('search');
-  const { start, limit } = parseLegacyPagination(searchParams);
+  const year = searchParams.get('year');
+  const publisher = searchParams.get('publisher');
+  const { start, limit, shouldPaginate, page } = parseLegacyPagination(searchParams);
 
-  const filters: Record<string, unknown>[] = [{ published_at: { $ne: null } }];
+  const filters: Record<string, unknown>[] = [];
+  const statusFilter = resolveStatusFilter(searchParams, { defaultStatus: shouldPaginate ? 'all' : undefined });
+  if (statusFilter) {
+    filters.push(statusFilter);
+  }
+
   if (search) {
+    const regex = buildRegexFilter(search);
     filters.push({
       $or: [
-        { title: { $regex: search, $options: 'i' } },
-        { author: { $regex: search, $options: 'i' } },
-        { ISBN: { $regex: search, $options: 'i' } }
+        { title: regex },
+        { author: regex },
+        { ISBN: regex }
       ]
     });
+  }
+
+  if (year) {
+    filters.push({ release_date: buildRegexFilter(year, { startsWith: true }) });
+  }
+
+  if (publisher) {
+    filters.push({ publishing_company: buildRegexFilter(publisher) });
   }
 
   const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
@@ -61,8 +84,15 @@ export async function GET(request: Request) {
     query.limit(limit);
   }
 
-  const books = await query;
+  const [books, total] = await Promise.all([
+    query,
+    shouldPaginate ? BookModel.countDocuments(filter) : Promise.resolve(undefined)
+  ]);
   const formatted = books.map((book) => formatBook(book));
+
+  if (shouldPaginate) {
+    return NextResponse.json(buildPaginatedResponse(formatted, { total, limit: limit ?? undefined, start, page }));
+  }
 
   return NextResponse.json(formatted);
 }
