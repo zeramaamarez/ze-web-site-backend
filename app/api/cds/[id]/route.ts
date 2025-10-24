@@ -10,142 +10,143 @@ import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
 
-type TrackReference = string | Types.ObjectId | { ref?: string | Types.ObjectId | null } | null | undefined;
+function resolveObjectId(value: unknown): Types.ObjectId | null {
+  if (!value) return null;
+  if (value instanceof Types.ObjectId) return value;
+  if (typeof value === 'string' && Types.ObjectId.isValid(value)) {
+    return new Types.ObjectId(value);
+  }
+  if (typeof value === 'object' && value !== null) {
+    const candidate = (value as { _id?: unknown; id?: unknown })._id ?? (value as { _id?: unknown; id?: unknown }).id;
+    return resolveObjectId(candidate);
+  }
+  return null;
+}
 
-async function fetchCdWithManualPopulate(identifier: string, { log = false } = {}) {
+async function loadCd(identifier: string, { log = false } = {}) {
   const logger = (...args: unknown[]) => {
     if (log) {
       console.log(...args);
     }
   };
 
-  const cd = await CdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier }).lean();
+  const cdDoc = await CdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier }).lean();
 
-  if (!cd) {
+  if (!cdDoc) {
     logger('❌ CD não encontrado');
     return null;
   }
 
-  logger('✅ CD encontrado:', cd.title);
-  logger('🎵 Track (antes populate):', cd.track);
+  logger('✅ CD encontrado:', cdDoc.title);
+  logger('🎵 Track IDs:', cdDoc.track);
 
-  if (cd.cover) {
+  const result: Record<string, unknown> = JSON.parse(JSON.stringify(cdDoc));
+
+  if (cdDoc.cover) {
     try {
-      const coverValue =
-        typeof cd.cover === 'object' && cd.cover !== null && '_id' in cd.cover
-          ? (cd.cover as { _id?: Types.ObjectId | string })._id
-          : cd.cover;
-
-      if (coverValue && Types.ObjectId.isValid(coverValue)) {
-        const coverId = coverValue instanceof Types.ObjectId ? coverValue : new Types.ObjectId(coverValue);
+      const coverId = resolveObjectId(cdDoc.cover);
+      if (coverId) {
         const coverDoc = await UploadFileModel.findById(coverId).lean();
         if (coverDoc) {
-          (cd as any).cover = { ...coverDoc, id: coverDoc._id.toString() };
+          const coverCopy = JSON.parse(JSON.stringify(coverDoc)) as Record<string, unknown>;
+          coverCopy.id = coverDoc._id.toString();
+          result.cover = coverCopy;
         }
       }
-    } catch (err) {
-      logger('⚠️ Erro ao popular cover:', err);
+    } catch (error) {
+      logger('⚠️ Erro cover:', error);
     }
   }
 
-  if (Array.isArray(cd.track) && cd.track.length > 0) {
+  result.track = [];
+
+  if (Array.isArray(cdDoc.track) && cdDoc.track.length > 0) {
     try {
-      const normalizedTrackIds = cd.track
-        .map((entry: TrackReference) => {
-          if (!entry) return null;
-          if (typeof entry === 'object' && 'ref' in entry && entry.ref) {
-            return entry.ref instanceof Types.ObjectId ? entry.ref : new Types.ObjectId(entry.ref);
+      const trackIds = cdDoc.track
+        .map((entry) => {
+          if (entry && typeof entry === 'object' && 'ref' in (entry as Record<string, unknown>)) {
+            return resolveObjectId((entry as { ref?: unknown }).ref ?? null);
           }
-          if (entry instanceof Types.ObjectId) {
-            return entry;
-          }
-          if (typeof entry === 'string' && Types.ObjectId.isValid(entry)) {
-            return new Types.ObjectId(entry);
-          }
-          return null;
+          return resolveObjectId(entry);
         })
         .filter((value): value is Types.ObjectId => Boolean(value));
 
-      logger('🔍 Track IDs a buscar:', normalizedTrackIds);
+      logger('🔍 Track IDs a buscar:', trackIds);
 
-      const tracks = await CdTrackModel.find({ _id: { $in: normalizedTrackIds } }).lean();
-      logger(`✅ Encontrados ${tracks.length} tracks no banco`);
+      const tracks = await CdTrackModel.find({ _id: { $in: trackIds } }).lean();
+      logger(`✅ Tracks encontrados: ${tracks.length}`);
 
-      const tracksById = new Map<string, any>();
+      const tracksById = new Map<string, Record<string, unknown>>();
 
       for (const track of tracks) {
+        const trackCopy = JSON.parse(JSON.stringify(track)) as Record<string, unknown>;
         const trackIdString = track._id.toString();
-        (track as any).id = trackIdString;
+        trackCopy.id = trackIdString;
 
-        if ((track as any).lyric) {
+        if (track.lyric) {
           try {
-            const lyricValue = (track as any).lyric;
-            const lyricId =
-              typeof lyricValue === 'object' && lyricValue !== null && '_id' in lyricValue
-                ? (lyricValue as { _id?: Types.ObjectId | string })._id
-                : lyricValue;
-
-            if (lyricId && Types.ObjectId.isValid(lyricId)) {
+            const lyricId = resolveObjectId(track.lyric);
+            if (lyricId) {
               const lyricDoc = await LyricModel.findById(lyricId)
                 .select('_id title slug composer content body text')
                 .lean();
-
               if (lyricDoc) {
-                (track as any).lyric = {
+                trackCopy.lyric = {
                   _id: lyricDoc._id,
-                  title: (lyricDoc as any).title,
-                  slug: (lyricDoc as any).slug,
-                  composer: (lyricDoc as any).composer,
-                  content: (lyricDoc as any).content || (lyricDoc as any).body || (lyricDoc as any).text || '',
+                  title: (lyricDoc as Record<string, unknown>).title,
+                  slug: (lyricDoc as Record<string, unknown>).slug,
+                  composer: (lyricDoc as Record<string, unknown>).composer,
+                  content:
+                    (lyricDoc as Record<string, unknown>).content ||
+                    (lyricDoc as Record<string, unknown>).body ||
+                    (lyricDoc as Record<string, unknown>).text ||
+                    '',
                   id: lyricDoc._id.toString()
                 };
               }
             }
-          } catch (err) {
-            logger('⚠️ Erro ao popular lyric:', err);
+          } catch (error) {
+            logger('⚠️ Erro lyric:', error);
           }
         }
 
-        if ((track as any).track) {
+        if (track.track) {
           try {
-            const audioValue = (track as any).track;
-            const audioId =
-              typeof audioValue === 'object' && audioValue !== null && '_id' in audioValue
-                ? (audioValue as { _id?: Types.ObjectId | string })._id
-                : audioValue;
-
-            if (audioId && Types.ObjectId.isValid(audioId)) {
+            const audioId = resolveObjectId(track.track);
+            if (audioId) {
               const audioDoc = await UploadFileModel.findById(audioId).lean();
               if (audioDoc) {
-                (track as any).track = { ...audioDoc, id: audioDoc._id.toString() };
+                const audioCopy = JSON.parse(JSON.stringify(audioDoc)) as Record<string, unknown>;
+                audioCopy.id = audioDoc._id.toString();
+                trackCopy.track = audioCopy;
               }
             }
-          } catch (err) {
-            logger('⚠️ Erro ao popular audio:', err);
+          } catch (error) {
+            logger('⚠️ Erro audio:', error);
           }
         }
 
-        tracksById.set(trackIdString, track);
+        tracksById.set(trackIdString, trackCopy);
       }
 
-      const orderedTracks = normalizedTrackIds
+      const orderedTracks = trackIds
         .map((id) => tracksById.get(id.toString()))
         .filter((value): value is Record<string, unknown> => Boolean(value));
 
-      (cd as any).track = orderedTracks;
+      result.track = orderedTracks;
       logger('✅ Tracks populados:', orderedTracks.length);
       if (orderedTracks.length > 0) {
         logger('✅ Primeira track:', JSON.stringify(orderedTracks[0], null, 2));
       }
-    } catch (err) {
-      logger('❌ Erro ao popular tracks:', err);
+    } catch (error) {
+      logger('❌ Erro tracks:', error);
     }
   }
 
-  (cd as any).id = cd._id.toString();
-  (cd as any).published = Boolean((cd as any).published_at ?? (cd as any).publishedAt);
+  result.id = cdDoc._id.toString();
+  result.published = Boolean(cdDoc.published_at ?? (cdDoc as { publishedAt?: unknown }).publishedAt);
 
-  return cd;
+  return result;
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -155,7 +156,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   try {
     await connectMongo();
 
-    const cd = await fetchCdWithManualPopulate(params.id, { log: true });
+    const cd = await loadCd(params.id, { log: true });
 
     if (!cd) {
       return NextResponse.json(null, { status: 404 });
@@ -266,7 +267,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       await deleteFileIfOrphan(previousCover);
     }
 
-    const populatedCd = await fetchCdWithManualPopulate(cd._id.toString());
+    const populatedCd = await loadCd(cd._id.toString());
     return NextResponse.json(populatedCd);
   } catch (error) {
     console.error('CD update error', error);

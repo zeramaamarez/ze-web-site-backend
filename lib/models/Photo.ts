@@ -14,7 +14,10 @@ const PhotoSchema = new Schema(
     created_by: { type: Types.ObjectId, ref: 'Admin' },
     updated_by: { type: Types.ObjectId, ref: 'Admin' }
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    collection: 'components_photo_photos'
+  }
 );
 
 applyStatusFields(PhotoSchema);

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { Types } from 'mongoose';
 import { connectMongo } from '@/lib/mongodb';
 import PhotoModel from '@/lib/models/Photo';
+import UploadFileModel from '@/lib/models/UploadFile';
 import { photoSchema } from '@/lib/validations/photo';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
@@ -17,13 +19,61 @@ function formatPhoto(doc: Record<string, unknown> | null) {
   };
 }
 
+function resolveObjectId(value: unknown): Types.ObjectId | null {
+  if (!value) return null;
+  if (value instanceof Types.ObjectId) return value;
+  if (typeof value === 'string' && Types.ObjectId.isValid(value)) {
+    return new Types.ObjectId(value);
+  }
+  if (typeof value === 'object' && value !== null) {
+    const candidate = (value as { _id?: unknown; id?: unknown })._id ?? (value as { id?: unknown }).id;
+    return resolveObjectId(candidate);
+  }
+  return null;
+}
+
+async function hydratePhoto(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+
+  const result = JSON.parse(JSON.stringify(doc)) as Record<string, unknown> & { images?: unknown[] };
+  const rawImages = (doc as { images?: unknown }).images;
+  const imageIds = Array.isArray(rawImages)
+    ? (rawImages as unknown[])
+        .map((entry) => {
+          if (entry && typeof entry === 'object' && 'ref' in (entry as Record<string, unknown>)) {
+            return resolveObjectId((entry as { ref?: unknown }).ref ?? null);
+          }
+          return resolveObjectId(entry);
+        })
+        .filter((value): value is Types.ObjectId => Boolean(value))
+    : [];
+
+  if (imageIds.length) {
+    const images = await UploadFileModel.find({ _id: { $in: imageIds } }).lean();
+    const imagesById = new Map(
+      images.map((image) => {
+        const copy = JSON.parse(JSON.stringify(image)) as Record<string, unknown>;
+        copy.id = image._id.toString();
+        return [image._id.toString(), copy] as const;
+      })
+    );
+
+    result.images = imageIds
+      .map((id) => imagesById.get(id.toString()))
+      .filter((value): value is Record<string, unknown> => Boolean(value));
+  } else {
+    result.images = [];
+  }
+
+  return result;
+}
+
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   await connectMongo();
   const identifier = params.id;
 
-  const photo = await PhotoModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
-    .populate('images')
-    .lean();
+  const doc = await PhotoModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier }).lean();
+  const photo = await hydratePhoto(doc);
 
   if (!photo) {
     return NextResponse.json(null, { status: 404 });
@@ -75,7 +125,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     await photo.save();
 
-    const updated = await PhotoModel.findById(photo._id).populate('images').lean();
+    const updatedDoc = await PhotoModel.findById(photo._id).lean();
+    const updated = await hydratePhoto(updatedDoc);
     return NextResponse.json(formatPhoto(updated));
   } catch (error) {
     console.error('Photo update error', error);
