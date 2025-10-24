@@ -50,6 +50,8 @@ export default function EditCdPage() {
       }
 
       const data = await response.json();
+      console.log('📀 Dados do CD recebidos:', data);
+      console.log('🎵 Tracks recebidos:', data.track);
       form.reset({
         title: data.title || '',
         company: data.company || '',
@@ -61,60 +63,58 @@ export default function EditCdPage() {
         setCover([{ _id: data.cover._id, url: data.cover.url, name: data.cover.name }]);
       }
       if (Array.isArray(data.track)) {
-        const toTrackForm = (entry: unknown): TrackForm => {
-          const candidate = entry && typeof entry === 'object' && 'ref' in (entry as Record<string, unknown>)
-            ? (entry as { ref?: Record<string, unknown> }).ref ?? entry
-            : entry;
+        console.log('🎵 Número de tracks:', data.track.length);
+        const toTrackForm = (track: any): TrackForm => {
+          console.log('🔧 toTrackForm recebeu:', track);
 
-          const record = candidate && typeof candidate === 'object' ? (candidate as Record<string, unknown>) : {};
-          const audio = record.track && typeof record.track === 'object'
-            ? (record.track as Record<string, unknown>)
-            : null;
+          const dataEntry = track?.ref || track;
 
-          const lyricSource = (record.lyric ?? record.lyrics) as unknown;
-          let lyric = '';
-          if (typeof lyricSource === 'string') {
-            lyric = lyricSource;
-          } else if (lyricSource && typeof lyricSource === 'object') {
-            const normalizedLyric = lyricSource as Record<string, unknown>;
-            lyric =
-              (typeof normalizedLyric.content === 'string' && normalizedLyric.content) ||
-              (typeof normalizedLyric.body === 'string' && normalizedLyric.body) ||
-              (typeof normalizedLyric.text === 'string' && normalizedLyric.text) ||
-              '';
+          console.log('🔧 toTrackForm data extraído:', dataEntry);
+
+          let lyricText = '';
+          if (typeof dataEntry?.lyric === 'string') {
+            lyricText = dataEntry.lyric;
+          } else if (typeof dataEntry?.lyric?.content === 'string') {
+            lyricText = dataEntry.lyric.content;
+          } else if (typeof dataEntry?.lyric?.body === 'string') {
+            lyricText = dataEntry.lyric.body;
+          } else if (typeof dataEntry?.lyric?.text === 'string') {
+            lyricText = dataEntry.lyric.text;
           }
 
-          const getString = (value: unknown) => (typeof value === 'string' ? value : '');
-          const audioId =
-            (typeof record.track === 'string' && record.track) || (audio && typeof audio._id === 'string' ? audio._id : undefined);
-          const audioUrl = getString(audio?.url);
-          const audioName =
-            getString(audio?.name) ||
-            getString(audio?.alternativeText) ||
-            getString(audio?.caption) ||
-            (audioUrl ? audioUrl.split('/').pop() ?? '' : '');
+          let audioFile: TrackForm['audioFile'] = null;
+          if (dataEntry?.track && typeof dataEntry.track === 'object') {
+            const audio = dataEntry.track as Record<string, any>;
+            const audioId = audio._id || audio.id || '';
+            const audioUrl = audio.url || '';
+            const audioName = audio.name || (audioUrl ? audioUrl.split('/').pop() || '' : '');
+            audioFile = {
+              _id: audioId,
+              url: audioUrl,
+              name: audioName
+            };
+          }
 
-          return {
-            _id: (typeof record._id === 'string' && record._id) || (typeof record.id === 'string' && record.id) || undefined,
-            name: getString(record.name),
-            publishing_company: getString(record.publishing_company),
-            composers: getString(record.composers),
-            time: getString(record.time),
-            track: audioId,
-            lyric,
-            data_sheet: getString(record.data_sheet),
-            audioFile:
-              audio && (audioId || audioUrl || audioName)
-                ? {
-                    _id: audioId ?? '',
-                    url: audioUrl,
-                    name: audioName || audioUrl
-                  }
-                : null
+          const result: TrackForm = {
+            _id: dataEntry?._id || dataEntry?.id,
+            name: dataEntry?.name || '',
+            publishing_company: dataEntry?.publishing_company || '',
+            composers: dataEntry?.composers || '',
+            time: dataEntry?.time || '',
+            track: typeof dataEntry?.track === 'string' ? dataEntry.track : dataEntry?.track?._id,
+            lyric: lyricText,
+            data_sheet: dataEntry?.data_sheet || '',
+            audioFile
           };
+
+          console.log('✅ toTrackForm resultado:', result);
+
+          return result;
         };
 
-        setTracks(data.track.map((entry: unknown) => toTrackForm(entry)));
+        const mappedTracks = data.track.map((entry: unknown) => toTrackForm(entry));
+        console.log('✅ Tracks mapeados:', mappedTracks);
+        setTracks(mappedTracks);
       }
       setLoading(false);
     };
