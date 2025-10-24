@@ -73,27 +73,42 @@ async function hydratePhoto(doc: Record<string, unknown> | null) {
 
   if (rawUrls.length === 0) {
     result.url = [];
-    result.image = undefined;
+    result.image = null;
     return result;
   }
 
   const resolvedIds = rawUrls
-    .map((entry) => resolveObjectId(entry))
-    .filter((value): value is Types.ObjectId => Boolean(value));
+    .map((entry) => resolveObjectIdString(entry))
+    .filter((value): value is string => Boolean(value && Types.ObjectId.isValid(value)));
 
-  const uniqueIds = Array.from(new Map(resolvedIds.map((id) => [id.toString(), id])).values());
+  const uniqueIds = Array.from(new Set(resolvedIds));
 
   const uploads = uniqueIds.length
     ? await UploadFileModel.find({ _id: { $in: uniqueIds } }).lean()
     : [];
 
-  const uploadMap = new Map<string, Record<string, unknown>>(
-    uploads.map((upload) => {
-      const copy = JSON.parse(JSON.stringify(upload)) as Record<string, unknown>;
-      copy.id = upload._id.toString();
-      return [upload._id.toString(), copy];
-    })
-  );
+  const uploadMap = new Map<string, Record<string, unknown>>();
+
+  for (const upload of uploads) {
+    const normalized = normalizeUploadFile(upload);
+    if (!normalized || typeof normalized !== 'object') {
+      continue;
+    }
+    const record = normalized as Record<string, unknown>;
+    const uploadRecord = upload as Record<string, unknown>;
+    const id =
+      typeof record.id === 'string'
+        ? record.id
+        : typeof record._id === 'string'
+        ? record._id
+        : resolveObjectIdString(uploadRecord._id) ?? resolveObjectIdString(uploadRecord.id);
+    if (!id) {
+      continue;
+    }
+    record.id = id;
+    record._id = id;
+    uploadMap.set(id, record);
+  }
 
   const hydratedUrls = rawUrls
     .map((entry) => {
@@ -105,16 +120,24 @@ async function hydratePhoto(doc: Record<string, unknown> | null) {
         }
       }
 
-      if (entry && typeof entry === 'object') {
-        const copy = JSON.parse(JSON.stringify(entry)) as Record<string, unknown>;
-        if (!copy.id && typeof copy._id === 'string') {
-          copy.id = copy._id;
+      const fallback = normalizeUploadFile(entry);
+      if (fallback && typeof fallback === 'object') {
+        const record = fallback as Record<string, unknown>;
+        const fallbackId =
+          typeof record.id === 'string'
+            ? record.id
+            : typeof record._id === 'string'
+            ? record._id
+            : id ?? null;
+        if (fallbackId) {
+          record.id = fallbackId;
+          record._id = fallbackId;
         }
-        return copy;
+        return record;
       }
 
-      if (typeof entry === 'string' && Types.ObjectId.isValid(entry)) {
-        return { _id: entry, id: entry } as Record<string, unknown>;
+      if (id) {
+        return { _id: id, id } as Record<string, unknown>;
       }
 
       return null;
@@ -122,7 +145,7 @@ async function hydratePhoto(doc: Record<string, unknown> | null) {
     .filter((value): value is Record<string, unknown> => Boolean(value));
 
   result.url = hydratedUrls;
-  result.image = hydratedUrls[0] ?? undefined;
+  result.image = hydratedUrls[0] ?? null;
 
   return result;
 }
