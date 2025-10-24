@@ -6,7 +6,14 @@ import { dvdSchema } from '@/lib/validations/dvd';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
 import LyricModel from '@/lib/models/Lyric';
-import { isObjectIdLike, normalizeDocument, normalizeTrackList, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import {
+  isObjectIdLike,
+  normalizeDocument,
+  normalizeTrackList,
+  normalizeUploadFile,
+  parseLegacyPagination,
+  withPublishedFlag
+} from '@/lib/legacy';
 
 const LEGACY_SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
 const SORTABLE_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'release_date', 'published_at']);
@@ -34,6 +41,20 @@ async function serializeDvd(id: string) {
     .populate('cover')
     .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
     .lean();
+}
+
+function formatDvd(
+  dvd: Record<string, unknown> | null,
+  lyricMap?: Map<string, Record<string, unknown>>
+) {
+  if (!dvd) return null;
+  const { track, cover, ...rest } = dvd as typeof dvd & { track?: unknown[]; cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeUploadFile(cover),
+    track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap })
+  };
 }
 
 export async function GET(request: Request) {
@@ -113,15 +134,7 @@ export async function GET(request: Request) {
       .filter((entry): entry is readonly [string, Record<string, unknown>] => Boolean(entry))
   );
 
-  const formatted = dvds.map((dvd) => {
-    const { track, cover, ...rest } = dvd as typeof dvd & { track?: unknown[]; cover?: unknown };
-    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-    return {
-      ...withPublishedFlag(normalizedRest),
-      cover: normalizeDocument(cover),
-      track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap })
-    };
-  });
+  const formatted = dvds.map((dvd) => formatDvd(dvd, lyricMap));
 
   return NextResponse.json(formatted);
 }
@@ -165,7 +178,7 @@ export async function POST(request: Request) {
       await attachFile({ fileId: parsed.data.cover, refId: dvd._id, kind: 'Dvd', field: 'cover' });
     }
 
-    return NextResponse.json(await serializeDvd(dvd._id.toString()), { status: 201 });
+    return NextResponse.json(formatDvd(await serializeDvd(dvd._id.toString())), { status: 201 });
   } catch (error) {
     console.error('DVD create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

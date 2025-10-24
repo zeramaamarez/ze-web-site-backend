@@ -4,7 +4,17 @@ import TextModel from '@/lib/models/Text';
 import { textSchema } from '@/lib/validations/text';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import { normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFile, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+
+function formatText(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeUploadFile(cover)
+  };
+}
 
 const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
 
@@ -58,14 +68,7 @@ export async function GET(request: Request) {
   }
 
   const texts = await query;
-  const formatted = texts.map((text) => {
-    const { cover, ...rest } = text as typeof text & { cover?: unknown };
-    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-    return {
-      ...withPublishedFlag(normalizedRest),
-      cover: normalizeDocument(cover)
-    };
-  });
+  const formatted = texts.map((text) => formatText(text));
 
   return NextResponse.json(formatted);
 }
@@ -92,7 +95,8 @@ export async function POST(request: Request) {
       await attachFile({ fileId: parsed.data.cover, refId: text._id, kind: 'Text', field: 'cover' });
     }
 
-    return NextResponse.json(await TextModel.findById(text._id).populate('cover').lean(), { status: 201 });
+    const created = await TextModel.findById(text._id).populate('cover').lean();
+    return NextResponse.json(formatText(created), { status: 201 });
   } catch (error) {
     console.error('Text create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

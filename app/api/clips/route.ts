@@ -4,7 +4,13 @@ import ClipModel from '@/lib/models/Clip';
 import { clipSchema } from '@/lib/validations/clip';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
-import { normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import {
+  normalizeDocument,
+  normalizeUploadFile,
+  normalizeUploadFileList,
+  parseLegacyPagination,
+  withPublishedFlag
+} from '@/lib/legacy';
 
 const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
 
@@ -22,6 +28,17 @@ function buildSort(sortParam?: string | null, directionParam?: string | null) {
 
 async function serializeClip(id: string) {
   return ClipModel.findById(id).populate('cover').lean();
+}
+
+function formatClip(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const coverValue = Array.isArray(cover) ? normalizeUploadFileList(cover) : normalizeUploadFile(cover);
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: coverValue
+  };
 }
 
 export async function GET(request: Request) {
@@ -55,17 +72,7 @@ export async function GET(request: Request) {
   }
 
   const clips = await query;
-  const formatted = clips.map((clip) => {
-    const { cover, ...rest } = clip as typeof clip & { cover?: unknown[] };
-    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-    const coverFiles = Array.isArray(cover)
-      ? (cover as unknown[]).map((file) => normalizeDocument(file)).filter(Boolean)
-      : normalizeDocument(cover);
-    return {
-      ...withPublishedFlag(normalizedRest),
-      cover: coverFiles
-    };
-  });
+  const formatted = clips.map((clip) => formatClip(clip));
 
   return NextResponse.json(formatted);
 }
@@ -95,7 +102,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json(await serializeClip(clip._id.toString()), { status: 201 });
+    return NextResponse.json(formatClip(await serializeClip(clip._id.toString())), { status: 201 });
   } catch (error) {
     console.error('Clip create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

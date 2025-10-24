@@ -4,7 +4,17 @@ import PhotoModel from '@/lib/models/Photo';
 import { photoSchema } from '@/lib/validations/photo';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import { normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFileList, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+
+function formatPhoto(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { images, ...rest } = doc as typeof doc & { images?: unknown[] };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    images: normalizeUploadFileList(images)
+  };
+}
 
 const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'date']);
 
@@ -58,17 +68,7 @@ export async function GET(request: Request) {
   }
 
   const photos = await query;
-  const formatted = photos.map((photo) => {
-    const { images, ...rest } = photo as typeof photo & { images?: unknown[] };
-    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-    const imageFiles = Array.isArray(images)
-      ? images.map((file) => normalizeDocument(file)).filter(Boolean)
-      : [];
-    return {
-      ...withPublishedFlag(normalizedRest),
-      images: imageFiles
-    };
-  });
+  const formatted = photos.map((photo) => formatPhoto(photo));
 
   return NextResponse.json(formatted);
 }
@@ -98,7 +98,8 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json(await PhotoModel.findById(photo._id).populate('images').lean(), { status: 201 });
+    const created = await PhotoModel.findById(photo._id).populate('images').lean();
+    return NextResponse.json(formatPhoto(created), { status: 201 });
   } catch (error) {
     console.error('Photo create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

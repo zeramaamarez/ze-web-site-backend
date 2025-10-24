@@ -5,7 +5,17 @@ import { showSchema } from '@/lib/validations/show';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFile, withPublishedFlag } from '@/lib/legacy';
+
+function formatShow(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeUploadFile(cover)
+  };
+}
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   await connectMongo();
@@ -19,14 +29,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json(null, { status: 404 });
   }
 
-  const { cover, ...rest } = show as typeof show & { cover?: unknown };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  const formatted = {
-    ...withPublishedFlag(normalizedRest),
-    cover: normalizeDocument(cover)
-  };
-
-  return NextResponse.json(formatted);
+  return NextResponse.json(formatShow(show));
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
@@ -66,7 +69,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       await show.save();
     }
 
-    return NextResponse.json(await ShowModel.findById(show._id).populate('cover').lean());
+    const updated = await ShowModel.findById(show._id).populate('cover').lean();
+    return NextResponse.json(formatShow(updated));
   } catch (error) {
     console.error('Show update error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

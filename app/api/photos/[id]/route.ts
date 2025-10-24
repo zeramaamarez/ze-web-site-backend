@@ -5,7 +5,17 @@ import { photoSchema } from '@/lib/validations/photo';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFileList, withPublishedFlag } from '@/lib/legacy';
+
+function formatPhoto(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { images, ...rest } = doc as typeof doc & { images?: unknown[] };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    images: normalizeUploadFileList(images)
+  };
+}
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   await connectMongo();
@@ -19,16 +29,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json(null, { status: 404 });
   }
 
-  const { images, ...rest } = photo as typeof photo & { images?: unknown[] };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  const formatted = {
-    ...withPublishedFlag(normalizedRest),
-    images: Array.isArray(images)
-      ? images.map((file) => normalizeDocument(file)).filter(Boolean)
-      : []
-  };
-
-  return NextResponse.json(formatted);
+  return NextResponse.json(formatPhoto(photo));
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
@@ -74,7 +75,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     await photo.save();
 
-    return NextResponse.json(await PhotoModel.findById(photo._id).populate('images').lean());
+    const updated = await PhotoModel.findById(photo._id).populate('images').lean();
+    return NextResponse.json(formatPhoto(updated));
   } catch (error) {
     console.error('Photo update error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

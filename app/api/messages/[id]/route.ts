@@ -5,7 +5,17 @@ import { messageSchema } from '@/lib/validations/message';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFile, withPublishedFlag } from '@/lib/legacy';
+
+function formatMessage(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeUploadFile(cover)
+  };
+}
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   await connectMongo();
@@ -19,14 +29,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json(null, { status: 404 });
   }
 
-  const { cover, ...rest } = message as typeof message & { cover?: unknown };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  const formatted = {
-    ...withPublishedFlag(normalizedRest),
-    cover: normalizeDocument(cover)
-  };
-
-  return NextResponse.json(formatted);
+  return NextResponse.json(formatMessage(message));
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
@@ -66,7 +69,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       await message.save();
     }
 
-    return NextResponse.json(await MessageModel.findById(message._id).populate('cover').lean());
+    const updated = await MessageModel.findById(message._id).populate('cover').lean();
+    return NextResponse.json(formatMessage(updated));
   } catch (error) {
     console.error('Message update error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

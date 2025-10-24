@@ -5,7 +5,17 @@ import { bookSchema } from '@/lib/validations/book';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFile, withPublishedFlag } from '@/lib/legacy';
+
+function formatBook(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeUploadFile(cover)
+  };
+}
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const identifier = params.id;
@@ -21,14 +31,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json(null, { status: 404 });
   }
 
-  const { cover, ...rest } = book as typeof book & { cover?: unknown };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  const formatted = {
-    ...withPublishedFlag(normalizedRest),
-    cover: normalizeDocument(cover)
-  };
-
-  return NextResponse.json(formatted);
+  return NextResponse.json(formatBook(book));
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
@@ -66,7 +69,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       await deleteFileIfOrphan(previousCover);
     }
 
-    return NextResponse.json(await BookModel.findById(existing._id).populate('cover').lean());
+    const updated = await BookModel.findById(existing._id).populate('cover').lean();
+    return NextResponse.json(formatBook(updated));
   } catch (error) {
     console.error('Book update error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

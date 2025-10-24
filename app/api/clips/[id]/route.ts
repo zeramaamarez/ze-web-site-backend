@@ -5,10 +5,21 @@ import { clipSchema } from '@/lib/validations/clip';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFile, normalizeUploadFileList, withPublishedFlag } from '@/lib/legacy';
 
 async function serializeClip(id: string) {
   return ClipModel.findById(id).populate('cover').lean();
+}
+
+function formatClip(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const coverValue = Array.isArray(cover) ? normalizeUploadFileList(cover) : normalizeUploadFile(cover);
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: coverValue
+  };
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -23,16 +34,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json(null, { status: 404 });
   }
 
-  const { cover, ...rest } = clip as typeof clip & { cover?: unknown };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  const formatted = {
-    ...withPublishedFlag(normalizedRest),
-    cover: Array.isArray(cover)
-      ? (cover as unknown[]).map((file) => normalizeDocument(file)).filter(Boolean)
-      : normalizeDocument(cover)
-  };
-
-  return NextResponse.json(formatted);
+  return NextResponse.json(formatClip(clip));
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
@@ -80,7 +82,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       }
     }
 
-    return NextResponse.json(await serializeClip(clip._id.toString()));
+    return NextResponse.json(formatClip(await serializeClip(clip._id.toString())));
   } catch (error) {
     console.error('Clip update error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

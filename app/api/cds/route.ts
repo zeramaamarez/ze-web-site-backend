@@ -10,6 +10,7 @@ import {
   isObjectIdLike,
   normalizeDocument,
   normalizeTrackList,
+  normalizeUploadFile,
   parseLegacyPagination,
   withPublishedFlag
 } from '@/lib/legacy';
@@ -106,7 +107,7 @@ export async function formatCdForResponse(
 
   return {
     ...withPublishedFlag(normalizedRest),
-    cover: normalizeDocument(cover),
+    cover: normalizeUploadFile(cover),
     track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap: map })
   };
 }

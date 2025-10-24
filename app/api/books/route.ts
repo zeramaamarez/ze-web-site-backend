@@ -4,7 +4,17 @@ import BookModel from '@/lib/models/Book';
 import { bookSchema } from '@/lib/validations/book';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import { normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFile, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+
+function formatBook(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeUploadFile(cover)
+  };
+}
 
 const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
 
@@ -52,14 +62,7 @@ export async function GET(request: Request) {
   }
 
   const books = await query;
-  const formatted = books.map((book) => {
-    const { cover, ...rest } = book as typeof book & { cover?: unknown };
-    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-    return {
-      ...withPublishedFlag(normalizedRest),
-      cover: normalizeDocument(cover)
-    };
-  });
+  const formatted = books.map((book) => formatBook(book));
 
   return NextResponse.json(formatted);
 }
@@ -86,7 +89,8 @@ export async function POST(request: Request) {
       await attachFile({ fileId: parsed.data.cover, refId: book._id, kind: 'Book', field: 'cover' });
     }
 
-    return NextResponse.json(await BookModel.findById(book._id).populate('cover').lean(), { status: 201 });
+    const created = await BookModel.findById(book._id).populate('cover').lean();
+    return NextResponse.json(formatBook(created), { status: 201 });
   } catch (error) {
     console.error('Book create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

@@ -41,8 +41,69 @@ export function normalizeDocument<T>(doc: T | null | undefined): T | null {
   return convert(doc) as T;
 }
 
-export function normalizeUploadFile(file: unknown) {
-  return normalizeDocument(file);
+function ensureHttpsUrl(value: unknown) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  if (value.startsWith('blob:') || value.startsWith('data:')) {
+    return value;
+  }
+
+  if (value.startsWith('//')) {
+    return `https:${value}`;
+  }
+
+  if (value.startsWith('http://')) {
+    return `https://${value.slice('http://'.length)}`;
+  }
+
+  return value;
+}
+
+export function normalizeUploadFile<T>(file: T | null | undefined): T | null {
+  const normalized = normalizeDocument(file);
+  if (!normalized || typeof normalized !== 'object') {
+    return normalized ?? null;
+  }
+
+  const record = normalized as AnyRecord;
+
+  if (typeof record.url === 'string') {
+    record.url = ensureHttpsUrl(record.url) as typeof record.url;
+  }
+
+  if (typeof record.previewUrl === 'string') {
+    record.previewUrl = ensureHttpsUrl(record.previewUrl) as typeof record.previewUrl;
+  }
+
+  if (record.formats && typeof record.formats === 'object') {
+    const formats = record.formats as AnyRecord;
+    for (const [key, value] of Object.entries(formats)) {
+      if (!value || typeof value !== 'object') {
+        delete formats[key];
+        continue;
+      }
+
+      const normalizedFormat = normalizeDocument(value) as AnyRecord;
+      if (normalizedFormat && typeof normalizedFormat.url === 'string') {
+        normalizedFormat.url = ensureHttpsUrl(normalizedFormat.url) as typeof normalizedFormat.url;
+      }
+      formats[key] = normalizedFormat;
+    }
+  }
+
+  return record as T;
+}
+
+export function normalizeUploadFileList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as Record<string, unknown>[];
+  }
+
+  return value
+    .map((entry) => normalizeUploadFile(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object'));
 }
 
 export function normalizeLyric(lyric: unknown) {

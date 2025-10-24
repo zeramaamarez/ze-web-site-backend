@@ -4,7 +4,29 @@ import ShowModel from '@/lib/models/Show';
 import { showSchema } from '@/lib/validations/show';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import { normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFile, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+
+function formatShow(doc: Record<string, unknown> | null, now = Date.now()) {
+  if (!doc) return null;
+  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const base = withPublishedFlag(normalizedRest);
+  const rawDate = (doc as { date?: unknown }).date;
+  const dateString =
+    typeof rawDate === 'string'
+      ? rawDate
+      : rawDate instanceof Date
+        ? rawDate.toISOString()
+        : typeof base.date === 'string'
+          ? (base.date as string)
+          : undefined;
+  return {
+    ...base,
+    cover: normalizeUploadFile(cover),
+    date: dateString ?? base.date,
+    isPast: dateString ? new Date(dateString).getTime() < now : false
+  };
+}
 
 const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'date']);
 
@@ -81,16 +103,7 @@ export async function GET(request: Request) {
 
   const shows = await query;
   const now = Date.now();
-  const formatted = shows.map((show) => {
-    const { cover, ...rest } = show as typeof show & { cover?: unknown };
-    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-    const base = withPublishedFlag(normalizedRest);
-    return {
-      ...base,
-      cover: normalizeDocument(cover),
-      isPast: show.date ? new Date(show.date).getTime() < now : false
-    };
-  });
+  const formatted = shows.map((show) => formatShow(show, now));
 
   return NextResponse.json(formatted);
 }
@@ -117,7 +130,8 @@ export async function POST(request: Request) {
       await attachFile({ fileId: parsed.data.cover, refId: show._id, kind: 'Show', field: 'cover' });
     }
 
-    return NextResponse.json(await ShowModel.findById(show._id).populate('cover').lean(), { status: 201 });
+    const created = await ShowModel.findById(show._id).populate('cover').lean();
+    return NextResponse.json(formatShow(created), { status: 201 });
   } catch (error) {
     console.error('Show create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

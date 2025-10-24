@@ -7,13 +7,27 @@ import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
 import LyricModel from '@/lib/models/Lyric';
-import { isObjectIdLike, normalizeDocument, normalizeTrackList, withPublishedFlag } from '@/lib/legacy';
+import { isObjectIdLike, normalizeDocument, normalizeTrackList, normalizeUploadFile, withPublishedFlag } from '@/lib/legacy';
 
 async function serializeDvd(id: string) {
   return DvdModel.findById(id)
     .populate('cover')
     .populate({ path: 'track.ref', model: 'DvdTrack', populate: { path: 'lyric', model: 'Lyric' } })
     .lean();
+}
+
+function formatDvd(
+  dvd: Record<string, unknown> | null,
+  lyricMap?: Map<string, Record<string, unknown>>
+) {
+  if (!dvd) return null;
+  const { track, cover, ...rest } = dvd as typeof dvd & { track?: unknown[]; cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeUploadFile(cover),
+    track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap })
+  };
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -62,15 +76,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       .filter((entry): entry is readonly [string, Record<string, unknown>] => Boolean(entry))
   );
 
-  const { track, cover, ...rest } = dvd as typeof dvd & { track?: unknown[]; cover?: unknown };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  const formatted = {
-    ...withPublishedFlag(normalizedRest),
-    cover: normalizeDocument(cover),
-    track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap })
-  };
-
-  return NextResponse.json(formatted);
+  return NextResponse.json(formatDvd(dvd, lyricMap));
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
@@ -146,7 +152,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       await deleteFileIfOrphan(previousCover);
     }
 
-    return NextResponse.json(await serializeDvd(dvd._id.toString()));
+    return NextResponse.json(formatDvd(await serializeDvd(dvd._id.toString())));
   } catch (error) {
     console.error('DVD update error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

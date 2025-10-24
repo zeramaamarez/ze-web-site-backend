@@ -4,7 +4,17 @@ import MessageModel from '@/lib/models/Message';
 import { messageSchema } from '@/lib/validations/message';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import { normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFile, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+
+function formatMessage(doc: Record<string, unknown> | null) {
+  if (!doc) return null;
+  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeUploadFile(cover)
+  };
+}
 
 const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
 
@@ -58,14 +68,7 @@ export async function GET(request: Request) {
   }
 
   const messages = await query;
-  const formatted = messages.map((message) => {
-    const { cover, ...rest } = message as typeof message & { cover?: unknown };
-    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-    return {
-      ...withPublishedFlag(normalizedRest),
-      cover: normalizeDocument(cover)
-    };
-  });
+  const formatted = messages.map((message) => formatMessage(message));
 
   return NextResponse.json(formatted);
 }
@@ -92,7 +95,8 @@ export async function POST(request: Request) {
       await attachFile({ fileId: parsed.data.cover, refId: message._id, kind: 'Message', field: 'cover' });
     }
 
-    return NextResponse.json(await MessageModel.findById(message._id).populate('cover').lean(), { status: 201 });
+    const created = await MessageModel.findById(message._id).populate('cover').lean();
+    return NextResponse.json(formatMessage(created), { status: 201 });
   } catch (error) {
     console.error('Message create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });
