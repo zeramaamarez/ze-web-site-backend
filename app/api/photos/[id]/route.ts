@@ -7,15 +7,18 @@ import { photoSchema } from '@/lib/validations/photo';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-import { normalizeDocument, normalizeUploadFile, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, normalizeUploadFile, normalizeUploadFileList, withPublishedFlag } from '@/lib/legacy';
 
 function formatPhoto(doc: Record<string, unknown> | null) {
   if (!doc) return null;
-  const { image, ...rest } = doc as typeof doc & { image?: unknown };
+  const { url, image, ...rest } = doc as typeof doc & { url?: unknown; image?: unknown };
   const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const normalizedUrl = normalizeUploadFileList(url);
+  const normalizedImage = normalizedUrl.length > 0 ? normalizedUrl[0] : normalizeUploadFile(image);
   return {
     ...withPublishedFlag(normalizedRest),
-    image: normalizeUploadFile(image)
+    url: normalizedUrl,
+    image: normalizedImage
   };
 }
 
@@ -26,31 +29,100 @@ function resolveObjectId(value: unknown): Types.ObjectId | null {
     return new Types.ObjectId(value);
   }
   if (typeof value === 'object' && value !== null) {
-    const candidate = (value as { _id?: unknown; id?: unknown })._id ?? (value as { id?: unknown }).id;
-    return resolveObjectId(candidate);
+    const record = value as { _id?: unknown; id?: unknown; ref?: unknown };
+    if (record._id) return resolveObjectId(record._id);
+    if (record.id) return resolveObjectId(record.id);
+    if (record.ref) return resolveObjectId(record.ref);
   }
   return null;
+}
+
+function resolveObjectIdString(value: unknown) {
+  const objectId = resolveObjectId(value);
+  if (objectId) {
+    return objectId.toString();
+  }
+  if (typeof value === 'object' && value !== null) {
+    const record = value as { _id?: unknown; id?: unknown };
+    if (typeof record._id === 'string') return record._id;
+    if (typeof record.id === 'string') return record.id;
+  }
+  if (typeof value === 'string' && Types.ObjectId.isValid(value)) {
+    return value;
+  }
+  return null;
+}
+
+function normalizeFileIdList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as string[];
+  }
+
+  return value
+    .map((entry) => resolveObjectIdString(entry))
+    .filter((entry): entry is string => Boolean(entry));
 }
 
 async function hydratePhoto(doc: Record<string, unknown> | null) {
   if (!doc) return null;
 
-  const result = JSON.parse(JSON.stringify(doc)) as Record<string, unknown> & { image?: unknown };
-  const rawImage = (doc as { image?: unknown }).image;
-  const imageId = resolveObjectId(rawImage);
+  const result = JSON.parse(JSON.stringify(doc)) as Record<string, unknown> & { url?: unknown; image?: unknown };
+  const rawUrls = Array.isArray((doc as { url?: unknown }).url)
+    ? ((doc as { url?: unknown }).url as unknown[])
+    : [];
 
-  if (imageId) {
-    const image = await UploadFileModel.findById(imageId).lean();
-    if (image) {
-      const copy = JSON.parse(JSON.stringify(image)) as Record<string, unknown>;
-      copy.id = image._id.toString();
-      result.image = copy;
-    } else {
-      result.image = undefined;
-    }
-  } else {
+  if (rawUrls.length === 0) {
+    result.url = [];
     result.image = undefined;
+    return result;
   }
+
+  const resolvedIds = rawUrls
+    .map((entry) => resolveObjectId(entry))
+    .filter((value): value is Types.ObjectId => Boolean(value));
+
+  const uniqueIds = Array.from(new Map(resolvedIds.map((id) => [id.toString(), id])).values());
+
+  const uploads = uniqueIds.length
+    ? await UploadFileModel.find({ _id: { $in: uniqueIds } }).lean()
+    : [];
+
+  const uploadMap = new Map<string, Record<string, unknown>>(
+    uploads.map((upload) => {
+      const copy = JSON.parse(JSON.stringify(upload)) as Record<string, unknown>;
+      copy.id = upload._id.toString();
+      return [upload._id.toString(), copy];
+    })
+  );
+
+  const hydratedUrls = rawUrls
+    .map((entry) => {
+      const id = resolveObjectIdString(entry);
+      if (id) {
+        const match = uploadMap.get(id);
+        if (match) {
+          return match;
+        }
+      }
+
+      if (entry && typeof entry === 'object') {
+        const copy = JSON.parse(JSON.stringify(entry)) as Record<string, unknown>;
+        if (!copy.id && typeof copy._id === 'string') {
+          copy.id = copy._id;
+        }
+        return copy;
+      }
+
+      if (typeof entry === 'string' && Types.ObjectId.isValid(entry)) {
+        return { _id: entry, id: entry } as Record<string, unknown>;
+      }
+
+      return null;
+    })
+    .filter((value): value is Record<string, unknown> => Boolean(value));
+
+  result.url = hydratedUrls;
+  result.image = hydratedUrls[0] ?? undefined;
 
   return result;
 }
@@ -90,23 +162,42 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ error: 'Galeria não encontrada' }, { status: 404 });
     }
 
-    const previousImage = photo.image?.toString();
+    const { url: rawUrl, images, ...rest } = parsed.data;
+    const previousUrls = Array.isArray(photo.url)
+      ? photo.url
+          .map((entry: unknown) => resolveObjectIdString(entry))
+          .filter((entry): entry is string => Boolean(entry))
+      : [];
 
-    Object.assign(photo, parsed.data, { updated_by: authResult.session.user!.id });
+    Object.assign(photo, rest, { updated_by: authResult.session.user!.id });
 
-    if (Object.prototype.hasOwnProperty.call(parsed.data, 'image')) {
-      const newImage = parsed.data.image || null;
-      photo.image = (newImage || undefined) as any;
+    const hasUrlUpdate =
+      Object.prototype.hasOwnProperty.call(parsed.data, 'url') ||
+      Object.prototype.hasOwnProperty.call(parsed.data, 'images');
 
-      if (newImage && newImage !== previousImage) {
-        await attachFile({ fileId: newImage, refId: photo._id, kind: 'Photo', field: 'image' });
-        if (previousImage) {
-          await detachFile(previousImage, photo._id);
-          await deleteFileIfOrphan(previousImage);
-        }
-      } else if (!newImage && previousImage) {
-        await detachFile(previousImage, photo._id);
-        await deleteFileIfOrphan(previousImage);
+    if (hasUrlUpdate) {
+      const normalizedUrl = normalizeFileIdList(rawUrl ?? images ?? []);
+      photo.url = normalizedUrl as unknown as typeof photo.url;
+
+      const previousSet = new Set(previousUrls);
+      const currentSet = new Set(normalizedUrl);
+
+      const added = normalizedUrl.filter((id) => !previousSet.has(id));
+      const removed = previousUrls.filter((id) => !currentSet.has(id));
+
+      if (added.length > 0) {
+        await Promise.all(
+          added.map((id) => attachFile({ fileId: id, refId: photo._id, kind: 'Photo', field: 'url' }))
+        );
+      }
+
+      if (removed.length > 0) {
+        await Promise.all(
+          removed.map(async (id) => {
+            await detachFile(id, photo._id);
+            await deleteFileIfOrphan(id);
+          })
+        );
       }
     }
 
@@ -135,12 +226,20 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: 'Galeria não encontrada' }, { status: 404 });
   }
 
-  const imageId = photo.image?.toString();
+  const urlIds = normalizeFileIdList(photo.url as unknown);
+  const legacyImageId = resolveObjectIdString((photo as { image?: unknown }).image);
+  if (legacyImageId && !urlIds.includes(legacyImageId)) {
+    urlIds.push(legacyImageId);
+  }
   await photo.deleteOne();
 
-  if (imageId) {
-    await detachFile(imageId, photo._id);
-    await deleteFileIfOrphan(imageId);
+  if (urlIds.length > 0) {
+    await Promise.all(
+      urlIds.map(async (id) => {
+        await detachFile(id, photo._id);
+        await deleteFileIfOrphan(id);
+      })
+    );
   }
 
   return NextResponse.json({ message: 'Galeria removida' });
