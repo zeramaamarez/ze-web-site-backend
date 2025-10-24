@@ -43,11 +43,12 @@ const UploadFileSchema = new Schema(
     formats: {
       thumbnail: FormatSchema,
       small: FormatSchema,
-      medium: FormatSchema
+      medium: FormatSchema,
+      large: FormatSchema
     },
     related: [RelatedSchema]
   },
-  { timestamps: true }
+  { timestamps: true, collection: 'upload_file' }
 );
 
 UploadFileSchema.index({ hash: 1 }, { unique: false });
