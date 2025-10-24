@@ -1,42 +1,172 @@
 import { NextResponse } from 'next/server';
+import { Types } from 'mongoose';
 import { connectMongo } from '@/lib/mongodb';
 import CdModel from '@/lib/models/Cd';
 import CdTrackModel from '@/lib/models/CdTrack';
+import LyricModel from '@/lib/models/Lyric';
+import UploadFileModel from '@/lib/models/UploadFile';
 import { cdSchema } from '@/lib/validations/cd';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-import { formatCdForResponse } from '@/app/api/cds/route';
 
-async function serializeCd(id: string) {
-  return CdModel.findById(id)
-    .populate('cover')
-    .populate({
-      path: 'track',
-      model: 'CdTrack',
-      populate: [{ path: 'track', model: 'UploadFile' }]
-    })
-    .lean();
+type TrackReference = string | Types.ObjectId | { ref?: string | Types.ObjectId | null } | null | undefined;
+
+async function fetchCdWithManualPopulate(identifier: string, { log = false } = {}) {
+  const logger = (...args: unknown[]) => {
+    if (log) {
+      console.log(...args);
+    }
+  };
+
+  const cd = await CdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier }).lean();
+
+  if (!cd) {
+    logger('❌ CD não encontrado');
+    return null;
+  }
+
+  logger('✅ CD encontrado:', cd.title);
+  logger('🎵 Track (antes populate):', cd.track);
+
+  if (cd.cover) {
+    try {
+      const coverValue =
+        typeof cd.cover === 'object' && cd.cover !== null && '_id' in cd.cover
+          ? (cd.cover as { _id?: Types.ObjectId | string })._id
+          : cd.cover;
+
+      if (coverValue && Types.ObjectId.isValid(coverValue)) {
+        const coverId = coverValue instanceof Types.ObjectId ? coverValue : new Types.ObjectId(coverValue);
+        const coverDoc = await UploadFileModel.findById(coverId).lean();
+        if (coverDoc) {
+          (cd as any).cover = { ...coverDoc, id: coverDoc._id.toString() };
+        }
+      }
+    } catch (err) {
+      logger('⚠️ Erro ao popular cover:', err);
+    }
+  }
+
+  if (Array.isArray(cd.track) && cd.track.length > 0) {
+    try {
+      const normalizedTrackIds = cd.track
+        .map((entry: TrackReference) => {
+          if (!entry) return null;
+          if (typeof entry === 'object' && 'ref' in entry && entry.ref) {
+            return entry.ref instanceof Types.ObjectId ? entry.ref : new Types.ObjectId(entry.ref);
+          }
+          if (entry instanceof Types.ObjectId) {
+            return entry;
+          }
+          if (typeof entry === 'string' && Types.ObjectId.isValid(entry)) {
+            return new Types.ObjectId(entry);
+          }
+          return null;
+        })
+        .filter((value): value is Types.ObjectId => Boolean(value));
+
+      logger('🔍 Track IDs a buscar:', normalizedTrackIds);
+
+      const tracks = await CdTrackModel.find({ _id: { $in: normalizedTrackIds } }).lean();
+      logger(`✅ Encontrados ${tracks.length} tracks no banco`);
+
+      const tracksById = new Map<string, any>();
+
+      for (const track of tracks) {
+        const trackIdString = track._id.toString();
+        (track as any).id = trackIdString;
+
+        if ((track as any).lyric) {
+          try {
+            const lyricValue = (track as any).lyric;
+            const lyricId =
+              typeof lyricValue === 'object' && lyricValue !== null && '_id' in lyricValue
+                ? (lyricValue as { _id?: Types.ObjectId | string })._id
+                : lyricValue;
+
+            if (lyricId && Types.ObjectId.isValid(lyricId)) {
+              const lyricDoc = await LyricModel.findById(lyricId)
+                .select('_id title slug composer content body text')
+                .lean();
+
+              if (lyricDoc) {
+                (track as any).lyric = {
+                  _id: lyricDoc._id,
+                  title: (lyricDoc as any).title,
+                  slug: (lyricDoc as any).slug,
+                  composer: (lyricDoc as any).composer,
+                  content: (lyricDoc as any).content || (lyricDoc as any).body || (lyricDoc as any).text || '',
+                  id: lyricDoc._id.toString()
+                };
+              }
+            }
+          } catch (err) {
+            logger('⚠️ Erro ao popular lyric:', err);
+          }
+        }
+
+        if ((track as any).track) {
+          try {
+            const audioValue = (track as any).track;
+            const audioId =
+              typeof audioValue === 'object' && audioValue !== null && '_id' in audioValue
+                ? (audioValue as { _id?: Types.ObjectId | string })._id
+                : audioValue;
+
+            if (audioId && Types.ObjectId.isValid(audioId)) {
+              const audioDoc = await UploadFileModel.findById(audioId).lean();
+              if (audioDoc) {
+                (track as any).track = { ...audioDoc, id: audioDoc._id.toString() };
+              }
+            }
+          } catch (err) {
+            logger('⚠️ Erro ao popular audio:', err);
+          }
+        }
+
+        tracksById.set(trackIdString, track);
+      }
+
+      const orderedTracks = normalizedTrackIds
+        .map((id) => tracksById.get(id.toString()))
+        .filter((value): value is Record<string, unknown> => Boolean(value));
+
+      (cd as any).track = orderedTracks;
+      logger('✅ Tracks populados:', orderedTracks.length);
+      if (orderedTracks.length > 0) {
+        logger('✅ Primeira track:', JSON.stringify(orderedTracks[0], null, 2));
+      }
+    } catch (err) {
+      logger('❌ Erro ao popular tracks:', err);
+    }
+  }
+
+  (cd as any).id = cd._id.toString();
+  (cd as any).published = Boolean((cd as any).published_at ?? (cd as any).publishedAt);
+
+  return cd;
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  await connectMongo();
-  const identifier = params.id;
+  console.log('\n🔍 ===== GET CD BY ID =====');
+  console.log('📌 ID:', params.id);
 
-  const cd = await CdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
-    .populate('cover')
-    .populate({
-      path: 'track',
-      model: 'CdTrack',
-      populate: [{ path: 'track', model: 'UploadFile' }]
-    })
-    .lean();
+  try {
+    await connectMongo();
 
-  if (!cd) {
-    return NextResponse.json(null, { status: 404 });
+    const cd = await fetchCdWithManualPopulate(params.id, { log: true });
+
+    if (!cd) {
+      return NextResponse.json(null, { status: 404 });
+    }
+
+    console.log('===== FIM GET CD =====\n');
+    return NextResponse.json(cd);
+  } catch (error) {
+    console.error('❌ Erro no GET CD:', error);
+    return NextResponse.json({ error: 'Erro ao buscar CD' }, { status: 500 });
   }
-
-  return NextResponse.json(await formatCdForResponse(cd));
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
@@ -136,7 +266,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       await deleteFileIfOrphan(previousCover);
     }
 
-    return NextResponse.json(await formatCdForResponse(await serializeCd(cd._id.toString())));
+    const populatedCd = await fetchCdWithManualPopulate(cd._id.toString());
+    return NextResponse.json(populatedCd);
   } catch (error) {
     console.error('CD update error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });
