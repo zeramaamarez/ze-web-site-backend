@@ -39,17 +39,11 @@ export async function deleteFileIfOrphan(fileId?: string | Types.ObjectId | null
   if (!file) return;
 
   if (!file.related?.length) {
-    if (file.provider_metadata?.public_id) {
-      try {
-        const cloudinary = (await import('@/lib/cloudinary')).default;
-        await cloudinary.uploader.destroy(file.provider_metadata.public_id, {
-          resource_type: file.provider_metadata.resource_type || 'image'
-        });
-      } catch (error) {
-        console.error('Erro ao remover arquivo do Cloudinary', error);
-      }
-    }
-
-    await file.deleteOne();
+    console.info('[UPLOAD] Orphan file preserved', {
+      id: file._id.toString(),
+      name: file.name,
+      provider: file.provider,
+      publicId: file.provider_metadata?.public_id
+    });
   }
 }

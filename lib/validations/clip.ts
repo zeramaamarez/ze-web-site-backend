@@ -7,6 +7,8 @@ export const clipSchema = z.object({
   info: z.string().optional(),
   url: z.string().url('URL inválida').regex(youtubeRegex, 'Informe uma URL do YouTube'),
   cover: z.array(z.string()).optional(),
+  status: z.enum(['draft', 'published']).optional(),
+  publishedAt: z.coerce.date().nullable().optional(),
   published_at: z.coerce.date().nullable().optional()
 });
 

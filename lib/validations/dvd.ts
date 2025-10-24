@@ -18,6 +18,8 @@ export const dvdSchema = z.object({
   info: z.string().optional(),
   videoUrl: z.string().url('URL inválida').regex(vimeoRegex, 'Informe uma URL do Vimeo'),
   cover: z.string().optional(),
+  status: z.enum(['draft', 'published']).optional(),
+  publishedAt: z.coerce.date().nullable().optional(),
   published_at: z.coerce.date().nullable().optional(),
   tracks: z.array(dvdTrackSchema).optional()
 });

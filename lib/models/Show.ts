@@ -1,5 +1,6 @@
 import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 import { applyUniqueSlug } from '@/lib/models/plugins/uniqueSlug';
+import { applyStatusFields } from '@/lib/models/plugins/status';
 
 const ShowSchema = new Schema(
   {
@@ -22,6 +23,7 @@ const ShowSchema = new Schema(
   { timestamps: true }
 );
 
+applyStatusFields(ShowSchema);
 applyUniqueSlug(ShowSchema);
 
 ShowSchema.index({ title: 'text', venue: 'text', city: 'text', state: 'text', country: 'text' });

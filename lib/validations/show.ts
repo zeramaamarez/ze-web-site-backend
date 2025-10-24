@@ -15,6 +15,8 @@ export const showSchema = z.object({
     .optional(),
   description: z.string().optional(),
   cover: z.string().nullable().optional(),
+  status: z.enum(['draft', 'published']).optional(),
+  publishedAt: z.coerce.date().nullable().optional(),
   published_at: z.coerce.date().nullable().optional()
 });
 

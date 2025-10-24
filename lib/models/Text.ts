@@ -1,5 +1,6 @@
 import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 import { applyUniqueSlug } from '@/lib/models/plugins/uniqueSlug';
+import { applyStatusFields } from '@/lib/models/plugins/status';
 
 const TextSchema = new Schema(
   {
@@ -17,6 +18,7 @@ const TextSchema = new Schema(
   { timestamps: true }
 );
 
+applyStatusFields(TextSchema);
 applyUniqueSlug(TextSchema);
 
 TextSchema.index({ title: 'text', content: 'text', category: 'text', author: 'text' });

@@ -178,12 +178,31 @@ export function normalizeTrackList(entries: unknown[], options: { lyricMap?: Map
     .filter((value): value is AnyRecord => Boolean(value));
 }
 
-export function withPublishedFlag<T extends AnyRecord>(doc: T, publishedAtField: keyof T = 'published_at' as keyof T) {
+export function resolvePublishedAt(doc: AnyRecord | null | undefined) {
+  if (!doc) return null;
+  const candidate = doc.publishedAt ?? doc.published_at ?? null;
+  if (candidate instanceof Date) return candidate;
+  if (typeof candidate === 'string' && candidate) {
+    const parsed = new Date(candidate);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return candidate ?? null;
+}
+
+export function isDocumentPublished(doc: AnyRecord | null | undefined) {
+  if (!doc) return false;
+  const status = doc.status as unknown;
+  if (status === 'published') return true;
+  if (status === 'draft') return false;
+  const publishedAt = resolvePublishedAt(doc);
+  return Boolean(publishedAt);
+}
+
+export function withPublishedFlag<T extends AnyRecord>(doc: T) {
   if (!doc) return doc;
-  const publishedAt = doc[publishedAtField];
   return {
     ...doc,
-    published: Boolean(publishedAt)
+    published: isDocumentPublished(doc)
   };
 }
 
@@ -227,7 +246,17 @@ export function parseLegacyPagination(searchParams: URLSearchParams) {
 
 export function resolveStatusFilter(
   searchParams: URLSearchParams,
-  { publishedField = 'published_at', defaultStatus }: { publishedField?: string; defaultStatus?: 'all' | 'published' | 'draft' } = {}
+  {
+    statusField = 'status',
+    publishedField = 'publishedAt',
+    legacyPublishedField = 'published_at',
+    defaultStatus
+  }: {
+    statusField?: string;
+    publishedField?: string;
+    legacyPublishedField?: string;
+    defaultStatus?: 'all' | 'published' | 'draft';
+  } = {}
 ) {
   const rawStatus = searchParams.get('status')?.trim().toLowerCase();
   const publishedParam = searchParams.get('published');
@@ -254,11 +283,31 @@ export function resolveStatusFilter(
     return null;
   }
 
-  if (status === 'draft') {
-    return { [publishedField]: null } as Record<string, unknown>;
+  const fallbackFields = [publishedField, legacyPublishedField].filter(
+    (field): field is string => Boolean(field && field !== statusField)
+  );
+
+  const buildClauses = (targetStatus: 'draft' | 'published') => {
+    const clauses: Record<string, unknown>[] = [
+      { [statusField]: targetStatus }
+    ];
+
+    for (const field of fallbackFields) {
+      clauses.push({
+        [statusField]: { $exists: false },
+        [field]: targetStatus === 'published' ? { $ne: null } : null
+      });
+    }
+
+    return clauses;
+  };
+
+  const clauses = buildClauses(status);
+  if (clauses.length === 1) {
+    return clauses[0];
   }
 
-  return { [publishedField]: { $ne: null } } as Record<string, unknown>;
+  return { $or: clauses } as Record<string, unknown>;
 }
 
 export interface PaginationMeta {

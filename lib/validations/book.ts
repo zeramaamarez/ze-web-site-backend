@@ -8,6 +8,8 @@ export const bookSchema = z.object({
   release_date: z.string().optional(),
   ISBN: z.string().optional(),
   cover: z.string().optional(),
+  status: z.enum(['draft', 'published']).optional(),
+  publishedAt: z.coerce.date().nullable().optional(),
   published_at: z.coerce.date().nullable().optional()
 });
 

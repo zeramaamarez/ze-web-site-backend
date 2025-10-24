@@ -1,5 +1,6 @@
 import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 import { applyUniqueSlug } from '@/lib/models/plugins/uniqueSlug';
+import { applyStatusFields } from '@/lib/models/plugins/status';
 
 const DvdTrackRefSchema = new Schema(
   {
@@ -26,6 +27,7 @@ const DvdSchema = new Schema(
   { timestamps: true }
 );
 
+applyStatusFields(DvdSchema);
 applyUniqueSlug(DvdSchema);
 
 DvdSchema.index({ title: 'text', company: 'text' });

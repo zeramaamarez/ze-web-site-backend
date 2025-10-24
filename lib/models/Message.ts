@@ -1,5 +1,6 @@
 import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 import { applyUniqueSlug } from '@/lib/models/plugins/uniqueSlug';
+import { applyStatusFields } from '@/lib/models/plugins/status';
 
 const MessageSchema = new Schema(
   {
@@ -8,6 +9,7 @@ const MessageSchema = new Schema(
     content: { type: String, required: true },
     excerpt: String,
     cover: { type: Types.ObjectId, ref: 'UploadFile' },
+    private: { type: Boolean, default: true },
     published_at: { type: Date, default: null },
     created_by: { type: Types.ObjectId, ref: 'Admin' },
     updated_by: { type: Types.ObjectId, ref: 'Admin' }
@@ -15,6 +17,7 @@ const MessageSchema = new Schema(
   { timestamps: true }
 );
 
+applyStatusFields(MessageSchema);
 applyUniqueSlug(MessageSchema);
 
 MessageSchema.index({ title: 'text', content: 'text', excerpt: 'text' });

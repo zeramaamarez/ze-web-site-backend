@@ -17,6 +17,8 @@ export const cdSchema = z.object({
   release_date: z.string().optional(),
   info: z.string().optional(),
   cover: z.string().optional(),
+  status: z.enum(['draft', 'published']).optional(),
+  publishedAt: z.coerce.date().nullable().optional(),
   published_at: z.coerce.date().nullable().optional(),
   tracks: z.array(cdTrackSchema).optional()
 });
