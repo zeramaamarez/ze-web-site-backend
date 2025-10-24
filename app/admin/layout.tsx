@@ -11,11 +11,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar role={session.user.role ?? 'admin'} />
-      <div className="flex flex-1 flex-col">
-        <Header name={session.user.name} email={session.user.email} />
-        <main className="flex-1 space-y-6 bg-muted/30 p-6">{children}</main>
+    <div className="flex min-h-screen bg-gradient-to-br from-slate-100 via-white to-purple-50/40">
+      <Sidebar role={session.user.role ?? 'admin'} name={session.user.name} email={session.user.email} />
+      <div className="relative flex flex-1 flex-col">
+        <Header name={session.user.name} email={session.user.email} role={session.user.role} />
+        <main className="flex-1 overflow-y-auto px-8 py-10">
+          <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-8">{children}</div>
+        </main>
       </div>
     </div>
   );

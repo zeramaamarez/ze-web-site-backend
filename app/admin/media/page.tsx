@@ -14,11 +14,13 @@ import {
   UploadCloud,
   View
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -309,39 +311,66 @@ export default function MediaLibraryPage() {
   }, [page, pageSize, totalItems]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Media Library</h1>
-          <p className="text-sm text-muted-foreground">
-            Gerencie todos os arquivos enviados e organize sua biblioteca de mídia.
-          </p>
+    <motion.div
+      className="space-y-10"
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease: 'easeOut' }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+        className="relative overflow-hidden rounded-3xl border border-white/60 bg-gradient-to-br from-purple-500/10 via-indigo-500/10 to-transparent p-8 shadow-xl"
+      >
+        <div className="pointer-events-none absolute -left-16 top-0 h-56 w-56 rounded-full bg-purple-500/20 blur-3xl" />
+        <div className="pointer-events-none absolute -right-20 bottom-0 h-52 w-52 rounded-full bg-pink-500/10 blur-3xl" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-3">
+            <Badge className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/20 px-4 py-1 text-xs font-semibold text-purple-700">
+              Biblioteca criativa
+            </Badge>
+            <h1 className="text-4xl font-bold tracking-tight text-slate-900">Biblioteca de mídia</h1>
+            <p className="max-w-2xl text-base leading-relaxed text-slate-600">
+              Gerencie, filtre e descubra seus arquivos com um layout em mosaico moderno, pré-visualizações instantâneas e animações suaves.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button
+              variant="outline"
+              onClick={() => void fetchAssets()}
+              disabled={loading}
+              className="rounded-2xl border-white/70 bg-white/70 px-6 py-3 text-sm font-semibold text-slate-600 shadow-md backdrop-blur"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Atualizar biblioteca
+            </Button>
+            <Button
+              onClick={handleUploadClick}
+              disabled={isUploading}
+              className="rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-pink-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110"
+            >
+              {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+              {isUploading ? 'Enviando...' : 'Enviar arquivos'}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              accept="image/*,video/*,audio/*"
+              onChange={(event) => void handleUpload(event.target.files)}
+            />
+          </div>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button variant="outline" onClick={() => void fetchAssets()} disabled={loading} className="sm:w-auto">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Atualizar
-          </Button>
-          <Button onClick={handleUploadClick} disabled={isUploading} className="sm:w-auto">
-            {isUploading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <UploadCloud className="mr-2 h-4 w-4" />
-            )}
-            {isUploading ? 'Enviando...' : 'Enviar arquivos'}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            accept="image/*,video/*,audio/*"
-            onChange={(event) => void handleUpload(event.target.files)}
-          />
-        </div>
-      </div>
+      </motion.div>
 
-      <div className="grid gap-4 rounded-lg border bg-card p-4 shadow-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.2 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+        className="grid gap-4 rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl backdrop-blur"
+      >
         <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-4">
           <Input
             value={search}
@@ -350,7 +379,7 @@ export default function MediaLibraryPage() {
               setPage(1);
             }}
             placeholder="Buscar por nome do arquivo"
-            className="w-full"
+            className="h-12 w-full rounded-2xl border-white/70 bg-white/70 px-4"
           />
           <Select
             value={typeFilter}
@@ -359,10 +388,10 @@ export default function MediaLibraryPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger>
+            <SelectTrigger className="h-12 rounded-2xl border-white/70 bg-white/70 px-4">
               <SelectValue placeholder="Tipo de arquivo" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-2xl border-white/70 bg-white/90 shadow-xl">
               <SelectItem value="all">Todos os tipos</SelectItem>
               <SelectItem value="image">Imagens</SelectItem>
               <SelectItem value="video">Vídeos</SelectItem>
@@ -378,10 +407,10 @@ export default function MediaLibraryPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger>
+            <SelectTrigger className="h-12 rounded-2xl border-white/70 bg-white/70 px-4">
               <SelectValue placeholder="Período" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-2xl border-white/70 bg-white/90 shadow-xl">
               <SelectItem value="all">Todas as datas</SelectItem>
               <SelectItem value="24h">Últimas 24 horas</SelectItem>
               <SelectItem value="7d">Últimos 7 dias</SelectItem>
@@ -397,10 +426,10 @@ export default function MediaLibraryPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger>
+            <SelectTrigger className="h-12 rounded-2xl border-white/70 bg-white/70 px-4">
               <SelectValue placeholder="Tamanho" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-2xl border-white/70 bg-white/90 shadow-xl">
               <SelectItem value="all">Todos os tamanhos</SelectItem>
               <SelectItem value="small">Até 1MB</SelectItem>
               <SelectItem value="medium">1MB a 5MB</SelectItem>
@@ -418,10 +447,10 @@ export default function MediaLibraryPage() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-full md:w-48">
+              <SelectTrigger className="h-12 w-full rounded-2xl border-white/70 bg-white/70 px-4 md:w-48">
                 <SelectValue placeholder="Ordenar por" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-2xl border-white/70 bg-white/90 shadow-xl">
                 <SelectItem value="createdAt">Data de upload</SelectItem>
                 <SelectItem value="name">Nome</SelectItem>
                 <SelectItem value="size">Tamanho</SelectItem>
@@ -434,17 +463,17 @@ export default function MediaLibraryPage() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-full md:w-44">
+              <SelectTrigger className="h-12 w-full rounded-2xl border-white/70 bg-white/70 px-4 md:w-44">
                 <SelectValue placeholder="Ordem" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-2xl border-white/70 bg-white/90 shadow-xl">
                 <SelectItem value="desc">Descendente</SelectItem>
                 <SelectItem value="asc">Ascendente</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">{paginationInfo}</p>
+            <p className="text-sm font-medium text-slate-500">{paginationInfo}</p>
             <Select
               value={String(pageSize)}
               onValueChange={(value) => {
@@ -453,10 +482,10 @@ export default function MediaLibraryPage() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-36">
+              <SelectTrigger className="h-12 w-36 rounded-2xl border-white/70 bg-white/70 px-4">
                 <SelectValue placeholder="Itens por página" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-2xl border-white/70 bg-white/90 shadow-xl">
                 {PAGE_SIZE_OPTIONS.map((option) => (
                   <SelectItem key={option} value={String(option)}>
                     {option} por página
@@ -466,125 +495,129 @@ export default function MediaLibraryPage() {
             </Select>
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      <div>
-        {loading ? (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: Math.min(pageSize, 12) }).map((_, index) => (
-              <div key={index} className="space-y-3 rounded-lg border bg-card p-4">
-                <Skeleton className="aspect-[4/3] w-full rounded-md" />
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
-                <Skeleton className="h-3 w-2/3" />
-              </div>
-            ))}
-          </div>
-        ) : assets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-muted/40 py-16 text-center">
-            <ImageIcon className="h-10 w-10 text-muted-foreground" />
-            <div>
-              <p className="font-semibold">Nenhum item encontrado</p>
-              <p className="text-sm text-muted-foreground">
-                Ajuste os filtros ou envie novos arquivos para começar a construir sua biblioteca.
-              </p>
-            </div>
-            <Button onClick={handleUploadClick} variant="outline">
-              <UploadCloud className="mr-2 h-4 w-4" /> Enviar arquivos
-            </Button>
-          </div>
-        ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {assets.map((asset) => (
-              <div key={asset._id} className="group flex flex-col overflow-hidden rounded-lg border bg-card shadow-sm transition hover:shadow-md">
-                <button
-                  type="button"
-                  onClick={() => setSelectedAsset(asset)}
-                  className="relative aspect-[4/3] w-full overflow-hidden bg-muted"
+        <div>
+          {loading ? (
+            <div className="columns-1 gap-6 sm:columns-2 xl:columns-3">
+              {Array.from({ length: Math.min(pageSize, 12) }).map((_, index) => (
+                <div
+                  key={index}
+                  className="mb-6 break-inside-avoid rounded-3xl border border-white/70 bg-white/80 p-4 shadow-lg backdrop-blur"
                 >
-                  {isImage(asset) ? (
-                    <Image
-                      src={asset.url}
-                      alt={asset.name}
-                      fill
-                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
-                      className="object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-muted-foreground">
-                      <ImageIcon className="h-10 w-10" />
-                    </div>
-                  )}
-                  <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 transition group-hover:opacity-100">
-                    <span className="inline-flex items-center gap-2 rounded-md bg-white/90 px-3 py-1 text-xs font-medium text-black">
-                      <View className="h-3.5 w-3.5" /> Visualizar detalhes
-                    </span>
-                  </div>
-                </button>
-                <div className="flex flex-1 flex-col gap-3 p-4">
-                  <div>
-                    <p className="truncate font-medium" title={asset.name}>
-                      {asset.name}
-                    </p>
-                    <p className="text-xs uppercase text-muted-foreground">
-                      {asset.ext ? asset.ext.replace('.', '') : asset.mime || '—'}
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <div>
-                      <p className="font-medium text-foreground">Dimensões</p>
-                      <p>{formatDimensions(asset)}</p>
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">Tamanho</p>
-                      <p>{formatFileSize(asset.size)}</p>
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">Upload</p>
-                      <p>{formatDate(asset.createdAt)}</p>
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">Tipo</p>
-                      <p>{getAssetTypeLabel(asset)}</p>
-                    </div>
-                  </div>
-                  <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => void handleCopyUrl(asset)}>
-                      <Copy className="mr-2 h-4 w-4" /> Copiar URL
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      onClick={() => setAssetToDelete(asset)}
-                      aria-label="Remover arquivo"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <Skeleton className="mb-3 aspect-[4/3] w-full rounded-2xl" />
+                  <Skeleton className="mb-2 h-4 w-3/4 rounded-full" />
+                  <Skeleton className="h-3 w-1/2 rounded-full" />
                 </div>
+              ))}
+            </div>
+          ) : assets.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-purple-200 bg-purple-50/40 py-16 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-xl">
+                <ImageIcon className="h-8 w-8" />
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+              <div className="space-y-2">
+                <p className="text-xl font-semibold text-slate-800">Sua biblioteca está vazia</p>
+                <p className="text-sm text-slate-500">
+                  Ajuste os filtros ou envie novos arquivos para começar a construir uma coleção espetacular.
+                </p>
+              </div>
+              <Button
+                onClick={handleUploadClick}
+                className="rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-pink-500 px-5 py-2 text-sm font-semibold text-white shadow-lg transition hover:brightness-110"
+              >
+                <UploadCloud className="mr-2 h-4 w-4" /> Enviar arquivos
+              </Button>
+            </div>
+          ) : (
+            <AnimatePresence mode="popLayout">
+              <div className="columns-1 gap-6 sm:columns-2 xl:columns-3">
+                {assets.map((asset) => (
+                  <motion.div
+                    key={asset._id}
+                    layout
+                    layoutId={asset._id}
+                    whileHover={{ y: -6 }}
+                    className="group relative mb-6 break-inside-avoid overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-xl transition-all duration-500 hover:shadow-2xl"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAsset(asset)}
+                      className="relative block aspect-[4/3] w-full overflow-hidden"
+                    >
+                      {isImage(asset) ? (
+                        <Image
+                          src={asset.url}
+                          alt={asset.name}
+                          fill
+                          sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
+                          className="object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-500">
+                          <ImageIcon className="h-10 w-10" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 transition duration-300 group-hover:opacity-100">
+                        <span className="inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-1.5 text-xs font-semibold text-slate-700 shadow-lg">
+                          <View className="h-4 w-4" /> Visualizar
+                        </span>
+                      </div>
+                    </button>
+                    <div className="flex flex-col gap-4 p-5">
+                      <div className="space-y-1">
+                        <p className="truncate text-sm font-semibold text-slate-800">{asset.name}</p>
+                        <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{getAssetTypeLabel(asset)}</p>
+                      </div>
+                      <div className="space-y-1 text-xs text-slate-500">
+                        <p>Tamanho: {formatFileSize(asset.size)}</p>
+                        <p>Upload: {formatDate(asset.createdAt)}</p>
+                      </div>
+                      <div className="mt-auto flex flex-wrap items-center gap-2 text-xs">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleCopyUrl(asset)}
+                          className="rounded-full border-purple-200 bg-white/80 px-3 py-1 font-medium text-purple-600 shadow-sm hover:border-purple-300"
+                        >
+                          <Copy className="mr-1 h-3.5 w-3.5" /> Copiar URL
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setAssetToDelete(asset)}
+                          className="ml-auto rounded-full bg-red-500/90 px-3 py-1 text-white shadow-md hover:bg-red-500"
+                        >
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Remover
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </AnimatePresence>
+          )}
+        </div>
 
-      <div className="flex flex-col gap-4 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">{paginationInfo}</p>
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col items-center justify-between gap-4 rounded-3xl border border-white/60 bg-white/80 p-4 shadow-lg backdrop-blur sm:flex-row">
+        <p className="text-sm font-medium text-slate-500">{paginationInfo}</p>
+        <div className="flex items-center gap-3">
           <Button
             variant="outline"
             onClick={() => setPage((current) => Math.max(1, current - 1))}
             disabled={page <= 1 || loading}
+            className="rounded-full border-purple-200 px-4 py-2 text-sm font-semibold text-slate-600"
           >
             Anterior
           </Button>
-          <span className="text-sm text-muted-foreground">
+          <span className="rounded-full bg-purple-50 px-4 py-1 text-sm font-semibold text-purple-600 shadow-inner">
             Página {page} de {totalPages}
           </span>
           <Button
             variant="outline"
             onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
             disabled={page >= totalPages || loading}
+            className="rounded-full border-purple-200 px-4 py-2 text-sm font-semibold text-slate-600"
           >
             Próxima
           </Button>
@@ -592,7 +625,7 @@ export default function MediaLibraryPage() {
       </div>
 
       <Dialog open={Boolean(selectedAsset)} onOpenChange={(open) => !open && setSelectedAsset(null)}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-5xl overflow-hidden rounded-3xl border border-white/70 bg-white/90 p-0 shadow-2xl backdrop-blur-xl">
           {selectedAsset && (
             <>
               <DialogHeader>
@@ -619,7 +652,7 @@ export default function MediaLibraryPage() {
                   )}
                 </div>
                 <div className="space-y-4">
-                  <div className="rounded-lg border p-4">
+                  <div className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-inner">
                     <dl className="space-y-3 text-sm">
                       <div className="flex items-center justify-between gap-4">
                         <dt className="text-muted-foreground">Formato</dt>
@@ -664,10 +697,17 @@ export default function MediaLibraryPage() {
                     </dl>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Button onClick={() => void handleCopyUrl(selectedAsset)}>
+                    <Button
+                      onClick={() => void handleCopyUrl(selectedAsset)}
+                      className="rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:brightness-110"
+                    >
                       <Copy className="mr-2 h-4 w-4" /> Copiar URL
                     </Button>
-                    <Button variant="destructive" onClick={() => setAssetToDelete(selectedAsset)}>
+                    <Button
+                      variant="destructive"
+                      onClick={() => setAssetToDelete(selectedAsset)}
+                      className="rounded-2xl bg-red-500/90 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-red-500"
+                    >
                       <Trash2 className="mr-2 h-4 w-4" /> Remover arquivo
                     </Button>
                   </div>
@@ -679,7 +719,7 @@ export default function MediaLibraryPage() {
       </Dialog>
 
       <Dialog open={Boolean(assetToDelete)} onOpenChange={(open) => !open && setAssetToDelete(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md rounded-3xl border border-white/70 bg-white/90 shadow-2xl backdrop-blur-xl">
           <DialogHeader>
             <DialogTitle>Remover arquivo</DialogTitle>
             <DialogDescription>
@@ -687,15 +727,19 @@ export default function MediaLibraryPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAssetToDelete(null)}>
+            <Button variant="outline" onClick={() => setAssetToDelete(null)} className="rounded-full border-purple-200 px-4 py-2 text-sm font-semibold text-slate-600">
               Cancelar
             </Button>
-            <Button variant="destructive" onClick={() => void confirmDelete()}>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmDelete()}
+              className="rounded-full bg-red-500/90 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-red-500"
+            >
               Remover
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   );
 }

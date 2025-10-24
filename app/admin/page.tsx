@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose, { Model } from 'mongoose';
 
 import { connectMongo } from '@/lib/mongodb';
 import BookModel from '@/lib/models/Book';
@@ -11,25 +11,23 @@ import PhotoModel from '@/lib/models/Photo';
 import ShowModel from '@/lib/models/Show';
 import TextModel from '@/lib/models/Text';
 import { getCloudinaryUsage } from '@/lib/cloudinary';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { DashboardContent } from './_components/dashboard-content';
 
-function formatDataSize(bytes: number) {
-  const megabytes = bytes / (1024 * 1024);
-  const gigabytes = megabytes / 1024;
+type LatestDocument = { title?: string | null; updatedAt?: Date | null };
 
-  if (gigabytes >= 1) {
-    return {
-      primary: `${gigabytes.toFixed(2)} GB`,
-      secondary: `${megabytes.toFixed(2)} MB`
-    } as const;
-  }
+async function fetchLatest(model: Model<Record<string, unknown>>, type: string) {
+  const documents = (await model
+    .find()
+    .sort({ updatedAt: -1 })
+    .limit(5)
+    .select('title updatedAt')
+    .lean()) as LatestDocument[];
 
-  return {
-    primary: `${megabytes.toFixed(2)} MB`,
-    secondary: null
-  } as const;
+  return documents.map((doc) => ({
+    title: (doc as { title?: string }).title ?? 'Sem título',
+    updatedAt: doc.updatedAt ? doc.updatedAt.toISOString() : null,
+    type
+  }));
 }
 
 async function getStats() {
@@ -84,17 +82,26 @@ async function getStats() {
     db.collection('components_dvd_tracks').countDocuments()
   ]);
 
-  const latest = await Promise.all([
-    BookModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean(),
-    CdModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean(),
-    DvdModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean(),
-    ClipModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean(),
-    LyricModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean(),
-    MessageModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean(),
-    PhotoModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean(),
-    ShowModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean(),
-    TextModel.find().sort({ updatedAt: -1 }).limit(5).select('title updatedAt').lean()
-  ]);
+  const latest = (
+    await Promise.all([
+      fetchLatest(BookModel, 'books'),
+      fetchLatest(CdModel, 'cds'),
+      fetchLatest(DvdModel, 'dvds'),
+      fetchLatest(ClipModel, 'clips'),
+      fetchLatest(LyricModel, 'lyrics'),
+      fetchLatest(MessageModel, 'messages'),
+      fetchLatest(PhotoModel, 'photos'),
+      fetchLatest(ShowModel, 'shows'),
+      fetchLatest(TextModel, 'texts')
+    ])
+  )
+    .flat()
+    .sort((a, b) => {
+      const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return bTime - aTime;
+    })
+    .slice(0, 5);
 
   const cloudinaryUsage = await getCloudinaryUsage().catch(() => null);
 
@@ -113,165 +120,20 @@ async function getStats() {
       dvds: dvdComponentTracks,
       total: cdComponentTracks + dvdComponentTracks
     },
-    latest: latest
-      .flat()
-      .sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0))
-      .slice(0, 5),
+    latest,
     cloudinary: cloudinaryUsage
-  };
+      ? {
+          storage: cloudinaryUsage.storage,
+          bandwidth: cloudinaryUsage.bandwidth,
+          resources: cloudinaryUsage.resources,
+          lastUpdated: cloudinaryUsage.lastUpdated ?? null
+        }
+      : null
+  } as const;
 }
 
 export default async function AdminDashboardPage() {
   const stats = await getStats();
 
-  const storageBytes = stats.cloudinary?.storage.usage ?? 0;
-  const bandwidthBytes = stats.cloudinary?.bandwidth.usage ?? 0;
-  const resourceCount = stats.cloudinary?.resources.usage ?? 0;
-
-  const storageDisplay = formatDataSize(storageBytes);
-  const bandwidthDisplay = formatDataSize(bandwidthBytes);
-
-  const storageSupplement = storageDisplay.secondary
-    ? ` (${storageDisplay.secondary})`
-    : '';
-  const bandwidthSupplement = bandwidthDisplay.secondary
-    ? ` (${bandwidthDisplay.secondary})`
-    : '';
-
-  const formattedResourceCount = new Intl.NumberFormat('pt-BR').format(
-    resourceCount
-  );
-
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Livros</CardTitle>
-            <CardDescription>
-              {stats.books.published} publicados de {stats.books.total}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>CDs</CardTitle>
-            <CardDescription>
-              {stats.cds.published} publicados de {stats.cds.total}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>DVDs</CardTitle>
-            <CardDescription>
-              {stats.dvds.published} publicados de {stats.dvds.total}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Clips</CardTitle>
-            <CardDescription>
-              {stats.clips.published} publicados de {stats.clips.total}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Letras</CardTitle>
-            <CardDescription>
-              {stats.lyrics.published} publicadas de {stats.lyrics.total}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Mensagens</CardTitle>
-            <CardDescription>
-              {stats.messages.published} publicadas de {stats.messages.total}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Fotos</CardTitle>
-            <CardDescription>
-              {stats.photos.published} publicadas de {stats.photos.total}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Shows</CardTitle>
-            <CardDescription>
-              {stats.shows.published} publicados de {stats.shows.total}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Textos</CardTitle>
-            <CardDescription>
-              {stats.texts.published} publicados de {stats.texts.total}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Total de faixas</CardTitle>
-            <CardDescription>{stats.tracks.total} faixas cadastradas</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1 text-sm text-muted-foreground">
-              <p>Faixas de CDs: {stats.tracks.cds}</p>
-              <p>Faixas de DVDs: {stats.tracks.dvds}</p>
-              <p>Total: {stats.tracks.total}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Armazenamento Cloudinary</CardTitle>
-            <CardDescription>
-              {stats.cloudinary
-                ? `${storageDisplay.primary} utilizados${storageSupplement}`
-                : 'Dados indisponíveis'}
-            </CardDescription>
-          </CardHeader>
-          {stats.cloudinary ? (
-            <CardContent>
-              <div className="space-y-1 text-sm text-muted-foreground">
-                <p>Arquivos: {formattedResourceCount}</p>
-                <p>
-                  Largura de banda: {bandwidthDisplay.primary}
-                  {bandwidthSupplement}
-                </p>
-              </div>
-            </CardContent>
-          ) : null}
-        </Card>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Últimas atualizações</CardTitle>
-          <CardDescription>Itens atualizados recentemente</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="space-y-2">
-            {stats.latest.map((item, index) => (
-              <li key={index} className="flex items-center justify-between text-sm">
-                <span>{(item as { title?: string }).title || 'Sem título'}</span>
-                <span className="text-muted-foreground">
-                  {item.updatedAt
-                    ? format(item.updatedAt, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
-                    : 'N/A'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  return <DashboardContent stats={stats} />;
 }
