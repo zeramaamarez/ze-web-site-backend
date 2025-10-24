@@ -91,8 +91,18 @@ async function hydratePhoto(doc: Record<string, unknown> | null) {
 
   const uniqueIds = Array.from(new Set(resolvedIds));
 
-  const uploads = uniqueIds.length
-    ? await UploadFileModel.find({ _id: { $in: uniqueIds } }).lean()
+  const uploadObjectIds = uniqueIds
+    .map((id) => {
+      try {
+        return new Types.ObjectId(id);
+      } catch (error) {
+        return null;
+      }
+    })
+    .filter((value): value is Types.ObjectId => Boolean(value));
+
+  const uploads = uploadObjectIds.length
+    ? await UploadFileModel.find({ _id: { $in: uploadObjectIds } }).lean()
     : [];
 
   const uploadMap = new Map<string, Record<string, unknown>>();
@@ -162,9 +172,13 @@ const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'date']);
 
 function buildSort(sortParam?: string | null, directionParam?: string | null) {
   const sortField = sortParam?.replace(/^-/, '') || 'createdAt';
-  let direction = sortParam?.startsWith('-') || !sortParam ? -1 : 1;
+  let direction = sortParam?.startsWith('-') ? -1 : 1;
+  if (!sortParam) {
+    direction = 1;
+  }
   if (directionParam) {
-    direction = directionParam === 'asc' ? 1 : -1;
+    const normalizedDirection = directionParam.toLowerCase();
+    direction = normalizedDirection === 'asc' ? 1 : -1;
   }
   if (!SORT_FIELDS.has(sortField)) {
     return { createdAt: -1 } as const;

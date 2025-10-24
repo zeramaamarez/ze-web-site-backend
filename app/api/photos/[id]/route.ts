@@ -83,8 +83,18 @@ async function hydratePhoto(doc: Record<string, unknown> | null) {
 
   const uniqueIds = Array.from(new Set(resolvedIds));
 
-  const uploads = uniqueIds.length
-    ? await UploadFileModel.find({ _id: { $in: uniqueIds } }).lean()
+  const uploadObjectIds = uniqueIds
+    .map((id) => {
+      try {
+        return new Types.ObjectId(id);
+      } catch (error) {
+        return null;
+      }
+    })
+    .filter((value): value is Types.ObjectId => Boolean(value));
+
+  const uploads = uploadObjectIds.length
+    ? await UploadFileModel.find({ _id: { $in: uploadObjectIds } }).lean()
     : [];
 
   const uploadMap = new Map<string, Record<string, unknown>>();
