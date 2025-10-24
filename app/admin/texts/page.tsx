@@ -9,6 +9,7 @@ import { ColumnCustomizer } from '@/components/admin/column-customizer';
 import { DataTable } from '@/components/admin/data-table';
 import { useColumnPreferences, type ColumnOption } from '@/components/admin/hooks/use-column-preferences';
 import { useVisibleColumns, type EnhancedColumn } from '@/components/admin/hooks/use-visible-columns';
+import { resolveListResponse, type LegacyListResponse } from '@/components/admin/utils/list-response';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,14 +25,7 @@ interface TextItem {
   cover?: { url: string } | null;
 }
 
-interface TextsResponse {
-  data: TextItem[];
-  pagination: {
-    page: number;
-    totalPages: number;
-    total?: number;
-  };
-}
+type TextsResponse = LegacyListResponse<TextItem>;
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
@@ -102,11 +96,12 @@ export default function TextsPage() {
         return;
       }
 
-      const data = (await response.json()) as TextsResponse;
-      setTexts(data.data);
-      setPage(data.pagination.page || 1);
-      setTotalPages(Math.max(1, data.pagination.totalPages || 1));
-      setTotalItems(data.pagination.total ?? data.data.length);
+      const payload = (await response.json()) as TextsResponse | TextItem[];
+      const { items, pagination } = resolveListResponse(payload, pageSize, page);
+      setTexts(items);
+      setPage(pagination.page);
+      setTotalPages(pagination.totalPages);
+      setTotalItems(pagination.total);
     } catch (error) {
       console.error('Failed to load texts', error);
       toast.error('Erro ao carregar textos');

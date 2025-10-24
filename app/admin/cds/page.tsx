@@ -11,6 +11,7 @@ import { ColumnCustomizer } from '@/components/admin/column-customizer';
 import { DataTable } from '@/components/admin/data-table';
 import { useColumnPreferences, type ColumnOption } from '@/components/admin/hooks/use-column-preferences';
 import { useVisibleColumns, type EnhancedColumn } from '@/components/admin/hooks/use-visible-columns';
+import { resolveListResponse, type LegacyListResponse } from '@/components/admin/utils/list-response';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,14 +28,7 @@ interface CdItem {
   cover?: { url: string } | null;
 }
 
-interface CdResponse {
-  data: CdItem[];
-  pagination: {
-    page: number;
-    totalPages: number;
-    total: number;
-  };
-}
+type CdResponse = LegacyListResponse<CdItem>;
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
@@ -114,11 +108,12 @@ export default function CdsPage() {
         return;
       }
 
-      const data = (await response.json()) as CdResponse;
-      setCds(data.data);
-      setPage(data.pagination.page || 1);
-      setTotalPages(Math.max(1, data.pagination.totalPages || 1));
-      setTotalItems(data.pagination.total || 0);
+      const payload = (await response.json()) as CdResponse | CdItem[];
+      const { items, pagination } = resolveListResponse(payload, pageSize, page);
+      setCds(items);
+      setPage(pagination.page);
+      setTotalPages(pagination.totalPages);
+      setTotalItems(pagination.total);
     } catch (error) {
       console.error('Failed to load cds', error);
       toast.error('Erro ao carregar CDs');
