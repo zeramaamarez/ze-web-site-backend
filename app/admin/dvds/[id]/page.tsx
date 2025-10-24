@@ -62,27 +62,38 @@ export default function EditDvdPage() {
         setCover([{ _id: data.cover._id, url: data.cover.url, name: data.cover.name }]);
       }
       if (Array.isArray(data.track)) {
-        setTracks(
-          data.track.map(
-            (item: {
-              ref?: {
-                _id: string;
-                name: string;
-                composers?: string;
-                publishing_company?: string;
-                time?: string;
-                lyric?: string;
-              };
-            }) => ({
-              _id: item.ref?._id,
-              name: item.ref?.name || '',
-              composers: item.ref?.composers || '',
-              publishing_company: item.ref?.publishing_company || '',
-              time: item.ref?.time || '',
-              lyric: item.ref?.lyric || ''
-            })
-          )
-        );
+        const toTrackForm = (entry: unknown): TrackForm => {
+          const candidate = entry && typeof entry === 'object' && 'ref' in (entry as Record<string, unknown>)
+            ? (entry as { ref?: Record<string, unknown> }).ref ?? entry
+            : entry;
+
+          const record = candidate && typeof candidate === 'object' ? (candidate as Record<string, unknown>) : {};
+          const getString = (value: unknown) => (typeof value === 'string' ? value : '');
+
+          const lyricSource = (record.lyric ?? record.lyrics) as unknown;
+          let lyric = '';
+          if (typeof lyricSource === 'string') {
+            lyric = lyricSource;
+          } else if (lyricSource && typeof lyricSource === 'object') {
+            const normalizedLyric = lyricSource as Record<string, unknown>;
+            lyric =
+              (typeof normalizedLyric.content === 'string' && normalizedLyric.content) ||
+              (typeof normalizedLyric.body === 'string' && normalizedLyric.body) ||
+              (typeof normalizedLyric.text === 'string' && normalizedLyric.text) ||
+              '';
+          }
+
+          return {
+            _id: (typeof record._id === 'string' && record._id) || (typeof record.id === 'string' && record.id) || undefined,
+            name: getString(record.name),
+            composers: getString(record.composers),
+            publishing_company: getString(record.publishing_company),
+            time: getString(record.time),
+            lyric
+          };
+        };
+
+        setTracks(data.track.map((entry: unknown) => toTrackForm(entry)));
       }
       setLoading(false);
     };

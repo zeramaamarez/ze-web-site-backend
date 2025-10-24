@@ -61,34 +61,60 @@ export default function EditCdPage() {
         setCover([{ _id: data.cover._id, url: data.cover.url, name: data.cover.name }]);
       }
       if (Array.isArray(data.track)) {
-        setTracks(
-          data.track.map(
-            (item: {
-              ref?: {
-                _id: string;
-                name: string;
-                publishing_company?: string;
-                composers?: string;
-                time?: string;
-                track?: { _id: string; url: string; name?: string } | null;
-                lyric?: string;
-                data_sheet?: string;
-              };
-            }) => ({
-              _id: item.ref?._id,
-              name: item.ref?.name || '',
-              publishing_company: item.ref?.publishing_company || '',
-              composers: item.ref?.composers || '',
-              time: item.ref?.time || '',
-              track: item.ref?.track?._id,
-              lyric: item.ref?.lyric || '',
-              data_sheet: item.ref?.data_sheet || '',
-              audioFile: item.ref?.track
-                ? { _id: item.ref.track._id, url: item.ref.track.url, name: item.ref.track.name }
+        const toTrackForm = (entry: unknown): TrackForm => {
+          const candidate = entry && typeof entry === 'object' && 'ref' in (entry as Record<string, unknown>)
+            ? (entry as { ref?: Record<string, unknown> }).ref ?? entry
+            : entry;
+
+          const record = candidate && typeof candidate === 'object' ? (candidate as Record<string, unknown>) : {};
+          const audio = record.track && typeof record.track === 'object'
+            ? (record.track as Record<string, unknown>)
+            : null;
+
+          const lyricSource = (record.lyric ?? record.lyrics) as unknown;
+          let lyric = '';
+          if (typeof lyricSource === 'string') {
+            lyric = lyricSource;
+          } else if (lyricSource && typeof lyricSource === 'object') {
+            const normalizedLyric = lyricSource as Record<string, unknown>;
+            lyric =
+              (typeof normalizedLyric.content === 'string' && normalizedLyric.content) ||
+              (typeof normalizedLyric.body === 'string' && normalizedLyric.body) ||
+              (typeof normalizedLyric.text === 'string' && normalizedLyric.text) ||
+              '';
+          }
+
+          const getString = (value: unknown) => (typeof value === 'string' ? value : '');
+          const audioId =
+            (typeof record.track === 'string' && record.track) || (audio && typeof audio._id === 'string' ? audio._id : undefined);
+          const audioUrl = getString(audio?.url);
+          const audioName =
+            getString(audio?.name) ||
+            getString(audio?.alternativeText) ||
+            getString(audio?.caption) ||
+            (audioUrl ? audioUrl.split('/').pop() ?? '' : '');
+
+          return {
+            _id: (typeof record._id === 'string' && record._id) || (typeof record.id === 'string' && record.id) || undefined,
+            name: getString(record.name),
+            publishing_company: getString(record.publishing_company),
+            composers: getString(record.composers),
+            time: getString(record.time),
+            track: audioId,
+            lyric,
+            data_sheet: getString(record.data_sheet),
+            audioFile:
+              audio && (audioId || audioUrl || audioName)
+                ? {
+                    _id: audioId ?? '',
+                    url: audioUrl,
+                    name: audioName || audioUrl
+                  }
                 : null
-            })
-          )
-        );
+          };
+        };
+
+        setTracks(data.track.map((entry: unknown) => toTrackForm(entry)));
       }
       setLoading(false);
     };
