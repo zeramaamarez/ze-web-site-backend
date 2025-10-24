@@ -50,6 +50,160 @@ async function serializeCd(id: string) {
     .lean();
 }
 
+type AnyRecord = Record<string, unknown>;
+
+function toIdString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (isObjectIdLike(value)) {
+    return value.toString();
+  }
+
+  return null;
+}
+
+function extractTrackId(entry: unknown): string | null {
+  if (!entry) {
+    return null;
+  }
+
+  const direct = toIdString(entry);
+  if (direct) {
+    return direct;
+  }
+
+  if (typeof entry === 'object') {
+    const record = entry as AnyRecord;
+    const ref = (record as { ref?: unknown }).ref;
+    if (ref != null) {
+      const nested = extractTrackId(ref);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    const idCandidate =
+      toIdString((record as { _id?: unknown })._id) ?? toIdString((record as { id?: unknown }).id);
+    if (idCandidate) {
+      return idCandidate;
+    }
+  }
+
+  return null;
+}
+
+const TRACK_DATA_KEYS = new Set([
+  'name',
+  'publishing_company',
+  'composers',
+  'time',
+  'lyric',
+  'data_sheet',
+  'track'
+]);
+
+function entryNeedsHydration(entry: unknown): boolean {
+  if (!entry) {
+    return false;
+  }
+
+  if (typeof entry === 'string') {
+    return true;
+  }
+
+  if (isObjectIdLike(entry)) {
+    return true;
+  }
+
+  if (typeof entry === 'object') {
+    const record = entry as AnyRecord;
+    const ref = (record as { ref?: unknown }).ref;
+    if (ref != null) {
+      return entryNeedsHydration(ref);
+    }
+
+    const hasDataFields = Array.from(TRACK_DATA_KEYS).some((key) => key in record);
+    if (hasDataFields) {
+      return false;
+    }
+
+    const idCandidate =
+      toIdString((record as { _id?: unknown })._id) ?? toIdString((record as { id?: unknown }).id);
+    return Boolean(idCandidate);
+  }
+
+  return false;
+}
+
+async function ensureCdTracksHydrated(cd: AnyRecord | null | undefined) {
+  if (!cd) {
+    return cd;
+  }
+
+  const entries = Array.isArray((cd as { track?: unknown[] }).track)
+    ? ((cd as { track: unknown[] }).track as unknown[])
+    : [];
+
+  if (!entries.length) {
+    return cd;
+  }
+
+  const needsHydration = entries.some((entry) => entryNeedsHydration(entry));
+  if (!needsHydration) {
+    return cd;
+  }
+
+  const ids = entries
+    .map((entry) => extractTrackId(entry))
+    .filter((value): value is string => Boolean(value));
+
+  if (!ids.length) {
+    return cd;
+  }
+
+  const uniqueIds = Array.from(new Set(ids));
+  const trackDocs = await CdTrackModel.find({ _id: { $in: uniqueIds } })
+    .populate({ path: 'track', model: 'UploadFile' })
+    .lean();
+
+  const trackMap = new Map<string, AnyRecord>();
+  for (const doc of trackDocs) {
+    const key = toIdString((doc as { _id?: unknown })._id) ?? toIdString((doc as { id?: unknown }).id);
+    if (key) {
+      trackMap.set(key, doc as AnyRecord);
+    }
+  }
+
+  if (!trackMap.size) {
+    return cd;
+  }
+
+  (cd as { track: unknown[] }).track = entries.map((entry) => {
+    const id = extractTrackId(entry);
+    if (!id) {
+      return entry;
+    }
+
+    const doc = trackMap.get(id);
+    if (!doc) {
+      return entry;
+    }
+
+    if (entry && typeof entry === 'object') {
+      const record = entry as AnyRecord;
+      if ('ref' in record) {
+        return { ...record, ref: doc };
+      }
+    }
+
+    return doc;
+  });
+
+  return cd;
+}
+
 function collectLyricIdsFromCd(cd: { track?: unknown[] }) {
   const ids = new Set<string>();
   for (const entry of cd.track ?? []) {
@@ -98,13 +252,14 @@ export async function formatCdForResponse(
 ) {
   if (!cd) return null;
 
+  const hydrated = (await ensureCdTracksHydrated(cd)) as typeof cd & { track?: unknown[]; cover?: unknown };
   let map = lyricMap;
   if (!map) {
-    const ids = collectLyricIdsFromCd(cd as { track?: unknown[] });
+    const ids = collectLyricIdsFromCd(hydrated as { track?: unknown[] });
     map = await buildLyricMap(ids);
   }
 
-  const { track, cover, ...rest } = cd as typeof cd & { track?: unknown[]; cover?: unknown };
+  const { track, cover, ...rest } = hydrated;
   const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
 
   return {
@@ -175,6 +330,8 @@ export async function GET(request: Request) {
     query,
     shouldPaginate ? CdModel.countDocuments(filter) : Promise.resolve(undefined)
   ]);
+
+  await Promise.all(cds.map((cd) => ensureCdTracksHydrated(cd)));
 
   const lyricIds = new Set<string>();
   for (const cd of cds) {

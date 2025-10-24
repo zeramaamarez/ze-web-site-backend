@@ -50,17 +50,213 @@ async function serializeDvd(id: string) {
     .lean();
 }
 
-function formatDvd(
+type AnyRecord = Record<string, unknown>;
+
+function toIdString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (isObjectIdLike(value)) {
+    return value.toString();
+  }
+
+  return null;
+}
+
+function extractTrackId(entry: unknown): string | null {
+  if (!entry) {
+    return null;
+  }
+
+  const direct = toIdString(entry);
+  if (direct) {
+    return direct;
+  }
+
+  if (typeof entry === 'object') {
+    const record = entry as AnyRecord;
+    const ref = (record as { ref?: unknown }).ref;
+    if (ref != null) {
+      const nested = extractTrackId(ref);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    const idCandidate =
+      toIdString((record as { _id?: unknown })._id) ?? toIdString((record as { id?: unknown }).id);
+    if (idCandidate) {
+      return idCandidate;
+    }
+  }
+
+  return null;
+}
+
+const TRACK_DATA_KEYS = new Set([
+  'name',
+  'publishing_company',
+  'composers',
+  'time',
+  'lyric',
+  'data_sheet',
+  'track'
+]);
+
+function entryNeedsHydration(entry: unknown): boolean {
+  if (!entry) {
+    return false;
+  }
+
+  if (typeof entry === 'string') {
+    return true;
+  }
+
+  if (isObjectIdLike(entry)) {
+    return true;
+  }
+
+  if (typeof entry === 'object') {
+    const record = entry as AnyRecord;
+    const ref = (record as { ref?: unknown }).ref;
+    if (ref != null) {
+      return entryNeedsHydration(ref);
+    }
+
+    const hasDataFields = Array.from(TRACK_DATA_KEYS).some((key) => key in record);
+    if (hasDataFields) {
+      return false;
+    }
+
+    const idCandidate =
+      toIdString((record as { _id?: unknown })._id) ?? toIdString((record as { id?: unknown }).id);
+    return Boolean(idCandidate);
+  }
+
+  return false;
+}
+
+async function ensureDvdTracksHydrated(dvd: AnyRecord | null | undefined) {
+  if (!dvd) {
+    return dvd;
+  }
+
+  const entries = Array.isArray((dvd as { track?: unknown[] }).track)
+    ? ((dvd as { track: unknown[] }).track as unknown[])
+    : [];
+
+  if (!entries.length) {
+    return dvd;
+  }
+
+  const needsHydration = entries.some((entry) => entryNeedsHydration(entry));
+  if (!needsHydration) {
+    return dvd;
+  }
+
+  const ids = entries
+    .map((entry) => extractTrackId(entry))
+    .filter((value): value is string => Boolean(value));
+
+  if (!ids.length) {
+    return dvd;
+  }
+
+  const uniqueIds = Array.from(new Set(ids));
+  const trackDocs = await DvdTrackModel.find({ _id: { $in: uniqueIds } })
+    .populate({ path: 'track', model: 'UploadFile' })
+    .lean();
+
+  const trackMap = new Map<string, AnyRecord>();
+  for (const doc of trackDocs) {
+    const key = toIdString((doc as { _id?: unknown })._id) ?? toIdString((doc as { id?: unknown }).id);
+    if (key) {
+      trackMap.set(key, doc as AnyRecord);
+    }
+  }
+
+  if (!trackMap.size) {
+    return dvd;
+  }
+
+  (dvd as { track: unknown[] }).track = entries.map((entry) => {
+    const id = extractTrackId(entry);
+    if (!id) {
+      return entry;
+    }
+
+    const doc = trackMap.get(id);
+    if (!doc) {
+      return entry;
+    }
+
+    if (entry && typeof entry === 'object') {
+      const record = entry as AnyRecord;
+      if ('ref' in record) {
+        return { ...record, ref: doc };
+      }
+    }
+
+    return doc;
+  });
+
+  return dvd;
+}
+
+async function formatDvd(
   dvd: Record<string, unknown> | null,
   lyricMap?: Map<string, Record<string, unknown>>
 ) {
   if (!dvd) return null;
-  const { track, cover, ...rest } = dvd as typeof dvd & { track?: unknown[]; cover?: unknown };
+
+  const hydrated = (await ensureDvdTracksHydrated(dvd)) as typeof dvd & { track?: unknown[]; cover?: unknown };
+  let map = lyricMap;
+  if (!map) {
+    const ids = new Set<string>();
+    for (const entry of (hydrated.track as unknown[]) ?? []) {
+      const track = (entry as { ref?: { lyric?: unknown } }).ref ?? entry;
+      const rawLyric = track?.lyric as unknown;
+      if (!rawLyric) continue;
+      if (typeof rawLyric === 'string') {
+        if (/^[a-fA-F0-9]{24}$/.test(rawLyric)) {
+          ids.add(rawLyric);
+        }
+      } else if (isObjectIdLike(rawLyric)) {
+        ids.add(rawLyric.toString());
+      } else if (typeof rawLyric === 'object' && rawLyric !== null) {
+        const candidate = (rawLyric as { _id?: unknown; id?: unknown })._id ?? (rawLyric as { id?: unknown }).id;
+        if (typeof candidate === 'string') {
+          ids.add(candidate);
+        } else if (isObjectIdLike(candidate)) {
+          ids.add(candidate.toString());
+        }
+      }
+    }
+
+    if (ids.size) {
+      const lyricDocs = await LyricModel.find({ _id: { $in: Array.from(ids) } }).lean();
+      map = new Map(
+        lyricDocs
+          .map((doc) => {
+            const normalized = normalizeDocument(doc);
+            const id = normalized?.id as string | undefined;
+            if (!normalized || !id) return null;
+            return [id, normalized] as const;
+          })
+          .filter((entry): entry is readonly [string, Record<string, unknown>] => Boolean(entry))
+      );
+    } else {
+      map = new Map();
+    }
+  }
+
+  const { track, cover, ...rest } = hydrated;
   const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
   return {
     ...withPublishedFlag(normalizedRest),
     cover: normalizeUploadFile(cover),
-    track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap })
+    track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap: map })
   };
 }
 
@@ -119,6 +315,8 @@ export async function GET(request: Request) {
     shouldPaginate ? DvdModel.countDocuments(filter) : Promise.resolve(undefined)
   ]);
 
+  await Promise.all(dvds.map((dvd) => ensureDvdTracksHydrated(dvd)));
+
   const lyricIds = new Set<string>();
   for (const dvd of dvds) {
     for (const entry of dvd.track ?? []) {
@@ -156,7 +354,7 @@ export async function GET(request: Request) {
       .filter((entry): entry is readonly [string, Record<string, unknown>] => Boolean(entry))
   );
 
-  const formatted = dvds.map((dvd) => formatDvd(dvd, lyricMap));
+  const formatted = await Promise.all(dvds.map((dvd) => formatDvd(dvd, lyricMap)));
 
   if (shouldPaginate) {
     return NextResponse.json(buildPaginatedResponse(formatted, { total, limit: limit ?? undefined, start, page }));
@@ -208,7 +406,7 @@ export async function POST(request: Request) {
       await attachFile({ fileId: parsed.data.cover, refId: dvd._id, kind: 'Dvd', field: 'cover' });
     }
 
-    return NextResponse.json(formatDvd(await serializeDvd(dvd._id.toString())), { status: 201 });
+    return NextResponse.json(await formatDvd(await serializeDvd(dvd._id.toString())), { status: 201 });
   } catch (error) {
     console.error('DVD create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });
