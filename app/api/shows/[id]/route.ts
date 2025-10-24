@@ -5,22 +5,28 @@ import { showSchema } from '@/lib/validations/show';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
+import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
-  if (!isObjectId(params.id)) {
-    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
-  }
-
   await connectMongo();
-  const show = await ShowModel.findById(params.id).populate('cover').lean();
+  const identifier = params.id;
+
+  const show = await ShowModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
+    .populate('cover')
+    .lean();
+
   if (!show) {
-    return NextResponse.json({ error: 'Show não encontrado' }, { status: 404 });
+    return NextResponse.json(null, { status: 404 });
   }
 
-  return NextResponse.json(show);
+  const { cover, ...rest } = show as typeof show & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const formatted = {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeDocument(cover)
+  };
+
+  return NextResponse.json(formatted);
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {

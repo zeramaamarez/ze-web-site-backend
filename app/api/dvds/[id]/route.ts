@@ -6,6 +6,8 @@ import { dvdSchema } from '@/lib/validations/dvd';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
+import LyricModel from '@/lib/models/Lyric';
+import { isObjectIdLike, normalizeDocument, normalizeTrackList, withPublishedFlag } from '@/lib/legacy';
 
 async function serializeDvd(id: string) {
   return DvdModel.findById(id)
@@ -15,20 +17,60 @@ async function serializeDvd(id: string) {
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
-  if (!isObjectId(params.id)) {
-    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
-  }
-
   await connectMongo();
-  const dvd = await serializeDvd(params.id);
+  const identifier = params.id;
+
+  const dvd = await DvdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
+    .populate('cover')
+    .populate({ path: 'track.ref', model: 'DvdTrack' })
+    .lean();
+
   if (!dvd) {
-    return NextResponse.json({ error: 'DVD não encontrado' }, { status: 404 });
+    return NextResponse.json(null, { status: 404 });
   }
 
-  return NextResponse.json(dvd);
+  const lyricIds = new Set<string>();
+  for (const entry of dvd.track ?? []) {
+    const track = (entry as { ref?: { lyric?: unknown } }).ref ?? entry;
+    const rawLyric = track?.lyric as unknown;
+    if (!rawLyric) continue;
+    if (typeof rawLyric === 'string') {
+      lyricIds.add(rawLyric);
+    } else if (isObjectIdLike(rawLyric)) {
+      lyricIds.add(rawLyric.toString());
+    } else if (typeof rawLyric === 'object' && rawLyric !== null) {
+      const candidate = (rawLyric as { _id?: unknown; id?: unknown })._id ?? (rawLyric as { id?: unknown }).id;
+      if (typeof candidate === 'string') {
+        lyricIds.add(candidate);
+      } else if (isObjectIdLike(candidate)) {
+        lyricIds.add(candidate.toString());
+      }
+    }
+  }
+
+  const lyricDocs = lyricIds.size
+    ? await LyricModel.find({ _id: { $in: Array.from(lyricIds) } }).lean()
+    : [];
+  const lyricMap = new Map(
+    lyricDocs
+      .map((doc) => {
+        const normalized = normalizeDocument(doc);
+        const id = normalized?.id as string | undefined;
+        if (!normalized || !id) return null;
+        return [id, normalized] as const;
+      })
+      .filter((entry): entry is readonly [string, Record<string, unknown>] => Boolean(entry))
+  );
+
+  const { track, cover, ...rest } = dvd as typeof dvd & { track?: unknown[]; cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const formatted = {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeDocument(cover),
+    track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap })
+  };
+
+  return NextResponse.json(formatted);
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {

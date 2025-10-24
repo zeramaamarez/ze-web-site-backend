@@ -3,8 +3,16 @@ import { connectMongo } from '@/lib/mongodb';
 import CdModel from '@/lib/models/Cd';
 import CdTrackModel from '@/lib/models/CdTrack';
 import { cdSchema } from '@/lib/validations/cd';
-import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
+import { requireAdmin } from '@/lib/api';
+import LyricModel from '@/lib/models/Lyric';
+import {
+  isObjectIdLike,
+  normalizeDocument,
+  normalizeTrackList,
+  parseLegacyPagination,
+  withPublishedFlag
+} from '@/lib/legacy';
 
 const LEGACY_SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
 const SORTABLE_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'release_date', 'company', 'published_at']);
@@ -34,67 +42,106 @@ async function serializeCd(id: string) {
     .lean();
 }
 
+function collectLyricIdsFromCd(cd: { track?: unknown[] }) {
+  const ids = new Set<string>();
+  for (const entry of cd.track ?? []) {
+    const track = (entry as { ref?: { lyric?: unknown } }).ref ?? entry;
+    const rawLyric = track?.lyric as unknown;
+    if (!rawLyric) continue;
+    if (typeof rawLyric === 'string') {
+      ids.add(rawLyric);
+    } else if (isObjectIdLike(rawLyric)) {
+      ids.add(rawLyric.toString());
+    } else if (typeof rawLyric === 'object' && rawLyric !== null) {
+      const candidate = (rawLyric as { _id?: unknown; id?: unknown })._id ?? (rawLyric as { id?: unknown }).id;
+      if (typeof candidate === 'string') {
+        ids.add(candidate);
+      } else if (isObjectIdLike(candidate)) {
+        ids.add(candidate.toString());
+      }
+    }
+  }
+  return ids;
+}
+
+async function buildLyricMap(ids: Set<string>) {
+  if (!ids.size) {
+    return new Map<string, Record<string, unknown>>();
+  }
+
+  const lyricDocs = await LyricModel.find({ _id: { $in: Array.from(ids) } }).lean();
+  return new Map(
+    lyricDocs
+      .map((doc) => {
+        const normalized = normalizeDocument(doc);
+        const id = normalized?.id as string | undefined;
+        if (!normalized || !id) return null;
+        return [id, normalized] as const;
+      })
+      .filter((entry): entry is readonly [string, Record<string, unknown>] => Boolean(entry))
+  );
+}
+
+export async function formatCdForResponse(
+  cd: Record<string, unknown> | null,
+  lyricMap?: Map<string, Record<string, unknown>>
+) {
+  if (!cd) return null;
+
+  let map = lyricMap;
+  if (!map) {
+    const ids = collectLyricIdsFromCd(cd as { track?: unknown[] });
+    map = await buildLyricMap(ids);
+  }
+
+  const { track, cover, ...rest } = cd as typeof cd & { track?: unknown[]; cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+
+  return {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeDocument(cover),
+    track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap: map })
+  };
+}
+
 export async function GET(request: Request) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
   const { searchParams } = new URL(request.url);
-  const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
-  const limitParam = searchParams.get('pageSize') || searchParams.get('limit') || '20';
-  const limit = Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100);
-  const search = searchParams.get('search');
-  const statusParam = searchParams.get('status') || searchParams.get('published');
-  const sort = buildSort(searchParams.get('sort'), searchParams.get('order'));
-  const yearFilter = searchParams.get('year');
-  const companyFilter = searchParams.get('company');
+  const sortParam = searchParams.get('_sort') || searchParams.get('sort');
+  const [sortField, sortDirection] = sortParam?.split(':') ?? [];
+  const sort = buildSort(sortField || undefined, sortDirection || searchParams.get('order'));
+  const { start, limit } = parseLegacyPagination(searchParams);
 
-  const andFilters: Record<string, unknown>[] = [];
-  if (search) {
-    andFilters.push({
-      $or: [
-        { title: { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } },
-        { release_date: { $regex: search, $options: 'i' } }
-      ]
-    });
-  }
-
-  if (statusParam === 'true' || statusParam === 'published') {
-    andFilters.push({ published_at: { $ne: null } });
-  } else if (statusParam === 'false' || statusParam === 'draft') {
-    andFilters.push({ published_at: null });
-  }
-
-  if (yearFilter) {
-    andFilters.push({ release_date: { $regex: new RegExp(yearFilter, 'i') } });
-  }
-
-  if (companyFilter) {
-    andFilters.push({ company: { $regex: new RegExp(companyFilter, 'i') } });
-  }
-
-  const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
+  const filter: Record<string, unknown> = { published_at: { $ne: null } };
 
   await connectMongo();
-  const total = await CdModel.countDocuments(filter);
-  const cds = await CdModel.find(filter)
+
+  const query = CdModel.find(filter)
     .sort(sort)
-    .skip((page - 1) * limit)
-    .limit(limit)
     .populate('cover')
-    .populate({ path: 'track.ref', model: 'CdTrack' })
+    .populate({ path: 'track.ref', model: 'CdTrack', populate: { path: 'track', model: 'UploadFile' } })
     .lean();
 
-  return NextResponse.json({
-    data: cds,
-    pagination: {
-      page,
-      limit,
-      pageSize: limit,
-      total,
-      totalPages: Math.ceil(total / limit)
-    }
-  });
+  if (typeof start === 'number' && start > 0) {
+    query.skip(start);
+  }
+
+  if (typeof limit === 'number' && limit >= 0 && limit > 0) {
+    query.limit(limit);
+  }
+
+  const cds = await query;
+
+  const lyricIds = new Set<string>();
+  for (const cd of cds) {
+    const ids = collectLyricIdsFromCd(cd);
+    ids.forEach((id) => lyricIds.add(id));
+  }
+
+  const lyricMap = await buildLyricMap(lyricIds);
+
+  const formatted = await Promise.all(cds.map((cd) => formatCdForResponse(cd, lyricMap)));
+
+  return NextResponse.json(formatted);
 }
 
 export async function POST(request: Request) {
@@ -141,7 +188,7 @@ export async function POST(request: Request) {
       await attachFile({ fileId: parsed.data.cover, refId: cd._id, kind: 'Cd', field: 'cover' });
     }
 
-    return NextResponse.json(await serializeCd(cd._id.toString()), { status: 201 });
+    return NextResponse.json(await formatCdForResponse(await serializeCd(cd._id.toString())), { status: 201 });
   } catch (error) {
     console.error('CD create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

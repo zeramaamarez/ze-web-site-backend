@@ -4,12 +4,16 @@ import BookModel from '@/lib/models/Book';
 import { bookSchema } from '@/lib/validations/book';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
+import { normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
 
 const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
 
-function buildSort(sortParam?: string | null) {
+function buildSort(sortParam?: string | null, directionParam?: string | null) {
   const sortField = sortParam?.replace(/^-/, '') || 'createdAt';
-  const direction = sortParam?.startsWith('-') || !sortParam ? -1 : 1;
+  let direction = sortParam?.startsWith('-') || !sortParam ? -1 : 1;
+  if (directionParam) {
+    direction = directionParam === 'asc' ? 1 : -1;
+  }
   if (!SORT_FIELDS.has(sortField)) {
     return { createdAt: -1 } as const;
   }
@@ -17,19 +21,16 @@ function buildSort(sortParam?: string | null) {
 }
 
 export async function GET(request: Request) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
   const { searchParams } = new URL(request.url);
-  const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
-  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20', 10), 1), 100);
+  const [sortField, sortDirection] = (searchParams.get('_sort') || searchParams.get('sort') || '')
+    .split(':');
+  const sort = buildSort(sortField || undefined, sortDirection || null);
   const search = searchParams.get('search');
-  const publishedParam = searchParams.get('published');
-  const sort = buildSort(searchParams.get('sort'));
+  const { start, limit } = parseLegacyPagination(searchParams);
 
-  const andFilters: Record<string, unknown>[] = [];
+  const filters: Record<string, unknown>[] = [{ published_at: { $ne: null } }];
   if (search) {
-    andFilters.push({
+    filters.push({
       $or: [
         { title: { $regex: search, $options: 'i' } },
         { author: { $regex: search, $options: 'i' } },
@@ -38,33 +39,29 @@ export async function GET(request: Request) {
     });
   }
 
-  if (publishedParam === 'true') {
-    andFilters.push({ published_at: { $ne: null } });
-  } else if (publishedParam === 'false') {
-    andFilters.push({ published_at: null });
-  }
-
-  const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
+  const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
 
   await connectMongo();
 
-  const total = await BookModel.countDocuments(filter);
-  const data = await BookModel.find(filter)
-    .sort(sort)
-    .skip((page - 1) * limit)
-    .limit(limit)
-    .populate('cover')
-    .lean();
+  const query = BookModel.find(filter).sort(sort).populate('cover').lean();
+  if (typeof start === 'number' && start > 0) {
+    query.skip(start);
+  }
+  if (typeof limit === 'number' && limit >= 0 && limit > 0) {
+    query.limit(limit);
+  }
 
-  return NextResponse.json({
-    data,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit)
-    }
+  const books = await query;
+  const formatted = books.map((book) => {
+    const { cover, ...rest } = book as typeof book & { cover?: unknown };
+    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+    return {
+      ...withPublishedFlag(normalizedRest),
+      cover: normalizeDocument(cover)
+    };
   });
+
+  return NextResponse.json(formatted);
 }
 
 export async function POST(request: Request) {

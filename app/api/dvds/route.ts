@@ -5,6 +5,8 @@ import DvdTrackModel from '@/lib/models/DvdTrack';
 import { dvdSchema } from '@/lib/validations/dvd';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
+import LyricModel from '@/lib/models/Lyric';
+import { isObjectIdLike, normalizeDocument, normalizeTrackList, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
 
 const LEGACY_SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
 const SORTABLE_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'release_date', 'published_at']);
@@ -35,21 +37,16 @@ async function serializeDvd(id: string) {
 }
 
 export async function GET(request: Request) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
   const { searchParams } = new URL(request.url);
-  const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
-  const limitParam = searchParams.get('pageSize') || searchParams.get('limit') || '20';
-  const limit = Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100);
+  const [sortField, sortDirection] = (searchParams.get('_sort') || searchParams.get('sort') || '').split(':');
+  const sort = buildSort(sortField || undefined, sortDirection || searchParams.get('order'));
   const search = searchParams.get('search');
-  const statusParam = searchParams.get('status') || searchParams.get('published');
-  const sort = buildSort(searchParams.get('sort'), searchParams.get('order'));
   const yearFilter = searchParams.get('year');
+  const { start, limit } = parseLegacyPagination(searchParams);
 
-  const andFilters: Record<string, unknown>[] = [];
+  const filters: Record<string, unknown>[] = [{ published_at: { $ne: null } }];
   if (search) {
-    andFilters.push({
+    filters.push({
       $or: [
         { title: { $regex: search, $options: 'i' } },
         { company: { $regex: search, $options: 'i' } },
@@ -58,38 +55,75 @@ export async function GET(request: Request) {
     });
   }
 
-  if (statusParam === 'true' || statusParam === 'published') {
-    andFilters.push({ published_at: { $ne: null } });
-  } else if (statusParam === 'false' || statusParam === 'draft') {
-    andFilters.push({ published_at: null });
-  }
-
   if (yearFilter) {
-    andFilters.push({ release_date: { $regex: new RegExp(yearFilter, 'i') } });
+    filters.push({ release_date: { $regex: new RegExp(yearFilter, 'i') } });
   }
 
-  const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
+  const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
 
   await connectMongo();
-  const total = await DvdModel.countDocuments(filter);
-  const dvds = await DvdModel.find(filter)
+  const query = DvdModel.find(filter)
     .sort(sort)
-    .skip((page - 1) * limit)
-    .limit(limit)
     .populate('cover')
     .populate({ path: 'track.ref', model: 'DvdTrack' })
     .lean();
 
-  return NextResponse.json({
-    data: dvds,
-    pagination: {
-      page,
-      limit,
-      pageSize: limit,
-      total,
-      totalPages: Math.ceil(total / limit)
+  if (typeof start === 'number' && start > 0) {
+    query.skip(start);
+  }
+
+  if (typeof limit === 'number' && limit >= 0 && limit > 0) {
+    query.limit(limit);
+  }
+
+  const dvds = await query;
+
+  const lyricIds = new Set<string>();
+  for (const dvd of dvds) {
+    for (const entry of dvd.track ?? []) {
+      const track = (entry as { ref?: { lyric?: unknown } }).ref ?? entry;
+      const rawLyric = track?.lyric as unknown;
+      if (!rawLyric) continue;
+      if (typeof rawLyric === 'string') {
+        lyricIds.add(rawLyric);
+      } else if (isObjectIdLike(rawLyric)) {
+        lyricIds.add(rawLyric.toString());
+      } else if (typeof rawLyric === 'object' && rawLyric !== null) {
+        const candidate = (rawLyric as { _id?: unknown; id?: unknown })._id ?? (rawLyric as { id?: unknown }).id;
+        if (typeof candidate === 'string') {
+          lyricIds.add(candidate);
+        } else if (isObjectIdLike(candidate)) {
+          lyricIds.add(candidate.toString());
+        }
+      }
     }
+  }
+
+  const lyricDocs = lyricIds.size
+    ? await LyricModel.find({ _id: { $in: Array.from(lyricIds) } }).lean()
+    : [];
+  const lyricMap = new Map(
+    lyricDocs
+      .map((doc) => {
+        const normalized = normalizeDocument(doc);
+        const id = normalized?.id as string | undefined;
+        if (!normalized || !id) return null;
+        return [id, normalized] as const;
+      })
+      .filter((entry): entry is readonly [string, Record<string, unknown>] => Boolean(entry))
+  );
+
+  const formatted = dvds.map((dvd) => {
+    const { track, cover, ...rest } = dvd as typeof dvd & { track?: unknown[]; cover?: unknown };
+    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+    return {
+      ...withPublishedFlag(normalizedRest),
+      cover: normalizeDocument(cover),
+      track: normalizeTrackList((track as unknown[]) ?? [], { lyricMap })
+    };
   });
+
+  return NextResponse.json(formatted);
 }
 
 export async function POST(request: Request) {

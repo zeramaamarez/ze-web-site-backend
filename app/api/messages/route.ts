@@ -4,12 +4,16 @@ import MessageModel from '@/lib/models/Message';
 import { messageSchema } from '@/lib/validations/message';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
+import { normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
 
 const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
 
-function buildSort(sortParam?: string | null) {
+function buildSort(sortParam?: string | null, directionParam?: string | null) {
   const sortField = sortParam?.replace(/^-/, '') || 'createdAt';
-  const direction = sortParam?.startsWith('-') || !sortParam ? -1 : 1;
+  let direction = sortParam?.startsWith('-') || !sortParam ? -1 : 1;
+  if (directionParam) {
+    direction = directionParam === 'asc' ? 1 : -1;
+  }
   if (!SORT_FIELDS.has(sortField)) {
     return { createdAt: -1 } as const;
   }
@@ -17,17 +21,15 @@ function buildSort(sortParam?: string | null) {
 }
 
 export async function GET(request: Request) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
   const { searchParams } = new URL(request.url);
-  const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
-  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20', 10), 1), 100);
+  const [sortField, sortDirection] = (searchParams.get('_sort') || searchParams.get('sort') || '').split(':');
   const search = searchParams.get('search');
   const publishedParam = searchParams.get('published');
-  const sort = buildSort(searchParams.get('sort'));
+  const sort = buildSort(sortField || undefined, sortDirection || null);
+  const { start, limit } = parseLegacyPagination(searchParams);
 
   const andFilters: Record<string, unknown>[] = [];
+  andFilters.push({ published_at: { $ne: null } });
   if (search) {
     andFilters.push({
       $or: [
@@ -38,32 +40,34 @@ export async function GET(request: Request) {
     });
   }
 
-  if (publishedParam === 'true') {
-    andFilters.push({ published_at: { $ne: null } });
-  } else if (publishedParam === 'false') {
+  if (publishedParam === 'false') {
     andFilters.push({ published_at: null });
   }
 
   const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
 
   await connectMongo();
-  const total = await MessageModel.countDocuments(filter);
-  const messages = await MessageModel.find(filter)
-    .sort(sort)
-    .skip((page - 1) * limit)
-    .limit(limit)
-    .populate('cover')
-    .lean();
+  const query = MessageModel.find(filter).sort(sort).populate('cover').lean();
 
-  return NextResponse.json({
-    data: messages,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit)
-    }
+  if (typeof start === 'number' && start > 0) {
+    query.skip(start);
+  }
+
+  if (typeof limit === 'number' && limit >= 0 && limit > 0) {
+    query.limit(limit);
+  }
+
+  const messages = await query;
+  const formatted = messages.map((message) => {
+    const { cover, ...rest } = message as typeof message & { cover?: unknown };
+    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+    return {
+      ...withPublishedFlag(normalizedRest),
+      cover: normalizeDocument(cover)
+    };
   });
+
+  return NextResponse.json(formatted);
 }
 
 export async function POST(request: Request) {

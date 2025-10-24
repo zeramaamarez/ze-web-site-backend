@@ -5,26 +5,34 @@ import { clipSchema } from '@/lib/validations/clip';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
+import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
 
 async function serializeClip(id: string) {
   return ClipModel.findById(id).populate('cover').lean();
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
-  if (!isObjectId(params.id)) {
-    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
-  }
-
   await connectMongo();
-  const clip = await serializeClip(params.id);
+  const identifier = params.id;
+
+  const clip = await ClipModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
+    .populate('cover')
+    .lean();
+
   if (!clip) {
-    return NextResponse.json({ error: 'Clip não encontrado' }, { status: 404 });
+    return NextResponse.json(null, { status: 404 });
   }
 
-  return NextResponse.json(clip);
+  const { cover, ...rest } = clip as typeof clip & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const formatted = {
+    ...withPublishedFlag(normalizedRest),
+    cover: Array.isArray(cover)
+      ? (cover as unknown[]).map((file) => normalizeDocument(file)).filter(Boolean)
+      : normalizeDocument(cover)
+  };
+
+  return NextResponse.json(formatted);
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {

@@ -4,36 +4,39 @@ import ShowModel from '@/lib/models/Show';
 import { showSchema } from '@/lib/validations/show';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
+import { normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
 
 const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'date']);
 
-function buildSort(sortParam?: string | null) {
+function buildSort(sortParam?: string | null, directionParam?: string | null) {
+  const defaultSort = { date: 1 } as const;
   if (!sortParam) {
-    return { date: 1 } as const;
+    return defaultSort;
   }
   const sortField = sortParam.replace(/^-/, '');
-  const direction = sortParam.startsWith('-') ? -1 : 1;
+  let direction = sortParam.startsWith('-') ? -1 : 1;
+  if (directionParam) {
+    direction = directionParam === 'asc' ? 1 : -1;
+  }
   if (!SORT_FIELDS.has(sortField)) {
-    return { date: 1 } as const;
+    return defaultSort;
   }
   return { [sortField]: direction } as Record<string, 1 | -1>;
 }
 
 export async function GET(request: Request) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
   const { searchParams } = new URL(request.url);
-  const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
-  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20', 10), 1), 100);
+  const [sortField, sortDirection] = (searchParams.get('_sort') || searchParams.get('sort') || '').split(':');
   const search = searchParams.get('search');
   const publishedParam = searchParams.get('published');
   const city = searchParams.get('city');
   const state = searchParams.get('state');
   const status = searchParams.get('status');
-  const sort = buildSort(searchParams.get('sort'));
+  const sort = buildSort(sortField || undefined, sortDirection || null);
+  const { start, limit } = parseLegacyPagination(searchParams);
 
   const andFilters: Record<string, unknown>[] = [];
+  andFilters.push({ published_at: { $ne: null } });
   if (search) {
     andFilters.push({
       $or: [
@@ -59,38 +62,37 @@ export async function GET(request: Request) {
     andFilters.push({ date: { $gte: new Date() } });
   }
 
-  if (publishedParam === 'true') {
-    andFilters.push({ published_at: { $ne: null } });
-  } else if (publishedParam === 'false') {
+  if (publishedParam === 'false') {
     andFilters.push({ published_at: null });
   }
 
   const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
 
   await connectMongo();
-  const total = await ShowModel.countDocuments(filter);
-  const shows = await ShowModel.find(filter)
-    .sort(sort)
-    .skip((page - 1) * limit)
-    .limit(limit)
-    .populate('cover')
-    .lean();
+  const query = ShowModel.find(filter).sort(sort).populate('cover').lean();
 
+  if (typeof start === 'number' && start > 0) {
+    query.skip(start);
+  }
+
+  if (typeof limit === 'number' && limit >= 0 && limit > 0) {
+    query.limit(limit);
+  }
+
+  const shows = await query;
   const now = Date.now();
-  const data = shows.map((show) => ({
-    ...show,
-    isPast: show.date ? new Date(show.date).getTime() < now : false
-  }));
-
-  return NextResponse.json({
-    data,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit)
-    }
+  const formatted = shows.map((show) => {
+    const { cover, ...rest } = show as typeof show & { cover?: unknown };
+    const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+    const base = withPublishedFlag(normalizedRest);
+    return {
+      ...base,
+      cover: normalizeDocument(cover),
+      isPast: show.date ? new Date(show.date).getTime() < now : false
+    };
   });
+
+  return NextResponse.json(formatted);
 }
 
 export async function POST(request: Request) {

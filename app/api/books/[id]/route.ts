@@ -5,26 +5,30 @@ import { bookSchema } from '@/lib/validations/book';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-
-async function findBook(id: string) {
-  await connectMongo();
-  return BookModel.findById(id).populate('cover');
-}
+import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
+  const identifier = params.id;
 
-  if (!isObjectId(params.id)) {
-    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
-  }
+  const book = await (async () => {
+    await connectMongo();
+    return BookModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
+      .populate('cover')
+      .lean();
+  })();
 
-  const book = await findBook(params.id);
   if (!book) {
-    return NextResponse.json({ error: 'Livro não encontrado' }, { status: 404 });
+    return NextResponse.json(null, { status: 404 });
   }
 
-  return NextResponse.json(book);
+  const { cover, ...rest } = book as typeof book & { cover?: unknown };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const formatted = {
+    ...withPublishedFlag(normalizedRest),
+    cover: normalizeDocument(cover)
+  };
+
+  return NextResponse.json(formatted);
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {

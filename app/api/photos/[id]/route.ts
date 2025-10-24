@@ -5,22 +5,30 @@ import { photoSchema } from '@/lib/validations/photo';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
+import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
-  if (!isObjectId(params.id)) {
-    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
-  }
-
   await connectMongo();
-  const photo = await PhotoModel.findById(params.id).populate('images').lean();
+  const identifier = params.id;
+
+  const photo = await PhotoModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
+    .populate('images')
+    .lean();
+
   if (!photo) {
-    return NextResponse.json({ error: 'Galeria não encontrada' }, { status: 404 });
+    return NextResponse.json(null, { status: 404 });
   }
 
-  return NextResponse.json(photo);
+  const { images, ...rest } = photo as typeof photo & { images?: unknown[] };
+  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const formatted = {
+    ...withPublishedFlag(normalizedRest),
+    images: Array.isArray(images)
+      ? images.map((file) => normalizeDocument(file)).filter(Boolean)
+      : []
+  };
+
+  return NextResponse.json(formatted);
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {

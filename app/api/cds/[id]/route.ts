@@ -6,6 +6,7 @@ import { cdSchema } from '@/lib/validations/cd';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
+import { formatCdForResponse } from '@/app/api/cds/route';
 
 async function serializeCd(id: string) {
   return CdModel.findById(id)
@@ -15,20 +16,19 @@ async function serializeCd(id: string) {
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
-  if (!isObjectId(params.id)) {
-    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
-  }
-
   await connectMongo();
-  const cd = await serializeCd(params.id);
+  const identifier = params.id;
+
+  const cd = await CdModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
+    .populate('cover')
+    .populate({ path: 'track.ref', model: 'CdTrack', populate: { path: 'track', model: 'UploadFile' } })
+    .lean();
+
   if (!cd) {
-    return NextResponse.json({ error: 'CD não encontrado' }, { status: 404 });
+    return NextResponse.json(null, { status: 404 });
   }
 
-  return NextResponse.json(cd);
+  return NextResponse.json(await formatCdForResponse(cd));
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
@@ -128,7 +128,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       await deleteFileIfOrphan(previousCover);
     }
 
-    return NextResponse.json(await serializeCd(cd._id.toString()));
+    return NextResponse.json(await formatCdForResponse(await serializeCd(cd._id.toString())));
   } catch (error) {
     console.error('CD update error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });

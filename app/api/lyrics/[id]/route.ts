@@ -4,22 +4,19 @@ import LyricModel from '@/lib/models/Lyric';
 import { lyricSchema } from '@/lib/validations/lyric';
 import { requireAdmin } from '@/lib/api';
 import { isObjectId } from '@/lib/utils';
+import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
-  if (!isObjectId(params.id)) {
-    return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
-  }
-
   await connectMongo();
-  const lyric = await LyricModel.findById(params.id).lean();
+  const identifier = params.id;
+
+  const lyric = await LyricModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier }).lean();
   if (!lyric) {
-    return NextResponse.json({ error: 'Letra não encontrada' }, { status: 404 });
+    return NextResponse.json(null, { status: 404 });
   }
 
-  return NextResponse.json(lyric);
+  const normalized = (normalizeDocument(lyric) ?? {}) as Record<string, unknown>;
+  return NextResponse.json(withPublishedFlag({ ...normalized, composer: normalized.composer ?? normalized.composers }));
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
