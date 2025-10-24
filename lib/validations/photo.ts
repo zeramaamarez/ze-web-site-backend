@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const photoSchema = z.object({
   title: z.string().min(1, 'Título é obrigatório'),
-  images: z.array(z.string()).optional(),
+  image: z.string().nullable().optional(),
   description: z.string().optional(),
   date: z.string().optional(),
   location: z.string().optional(),

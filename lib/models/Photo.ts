@@ -6,7 +6,7 @@ const PhotoSchema = new Schema(
   {
     title: { type: String, required: true, trim: true },
     slug: { type: String, unique: true, index: true },
-    images: [{ type: Types.ObjectId, ref: 'UploadFile' }],
+    image: { type: Types.ObjectId, ref: 'UploadFile' },
     description: String,
     date: String,
     location: String,

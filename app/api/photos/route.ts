@@ -10,7 +10,7 @@ import {
   buildPaginatedResponse,
   buildRegexFilter,
   normalizeDocument,
-  normalizeUploadFileList,
+  normalizeUploadFile,
   parseLegacyPagination,
   resolveStatusFilter,
   withPublishedFlag
@@ -18,11 +18,11 @@ import {
 
 function formatPhoto(doc: Record<string, unknown> | null) {
   if (!doc) return null;
-  const { images, ...rest } = doc as typeof doc & { images?: unknown[] };
+  const { image, ...rest } = doc as typeof doc & { image?: unknown };
   const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
   return {
     ...withPublishedFlag(normalizedRest),
-    images: normalizeUploadFileList(images)
+    image: normalizeUploadFile(image)
   };
 }
 
@@ -42,34 +42,21 @@ function resolveObjectId(value: unknown): Types.ObjectId | null {
 async function hydratePhoto(doc: Record<string, unknown> | null) {
   if (!doc) return null;
 
-  const result = JSON.parse(JSON.stringify(doc)) as Record<string, unknown> & { images?: unknown[] };
-  const rawImages = (doc as { images?: unknown }).images;
-  const imageIds = Array.isArray(rawImages)
-    ? (rawImages as unknown[])
-        .map((entry) => {
-          if (entry && typeof entry === 'object' && 'ref' in (entry as Record<string, unknown>)) {
-            return resolveObjectId((entry as { ref?: unknown }).ref ?? null);
-          }
-          return resolveObjectId(entry);
-        })
-        .filter((value): value is Types.ObjectId => Boolean(value))
-    : [];
+  const result = JSON.parse(JSON.stringify(doc)) as Record<string, unknown> & { image?: unknown };
+  const rawImage = (doc as { image?: unknown }).image;
+  const imageId = resolveObjectId(rawImage);
 
-  if (imageIds.length) {
-    const images = await UploadFileModel.find({ _id: { $in: imageIds } }).lean();
-    const imagesById = new Map(
-      images.map((image) => {
-        const copy = JSON.parse(JSON.stringify(image)) as Record<string, unknown>;
-        copy.id = image._id.toString();
-        return [image._id.toString(), copy] as const;
-      })
-    );
-
-    result.images = imageIds
-      .map((id) => imagesById.get(id.toString()))
-      .filter((value): value is Record<string, unknown> => Boolean(value));
+  if (imageId) {
+    const image = await UploadFileModel.findById(imageId).lean();
+    if (image) {
+      const copy = JSON.parse(JSON.stringify(image)) as Record<string, unknown>;
+      copy.id = image._id.toString();
+      result.image = copy;
+    } else {
+      result.image = undefined;
+    }
   } else {
-    result.images = [];
+    result.image = undefined;
   }
 
   return result;
@@ -167,15 +154,13 @@ export async function POST(request: Request) {
     await connectMongo();
     const photo = await PhotoModel.create({
       ...parsed.data,
-      images: parsed.data.images || [],
+      image: parsed.data.image || undefined,
       created_by: authResult.session.user!.id,
       updated_by: authResult.session.user!.id
     });
 
-    if (parsed.data.images?.length) {
-      for (const fileId of parsed.data.images) {
-        await attachFile({ fileId, refId: photo._id, kind: 'Photo', field: 'images' });
-      }
+    if (parsed.data.image) {
+      await attachFile({ fileId: parsed.data.image, refId: photo._id, kind: 'Photo', field: 'image' });
     }
 
     const createdDoc = await PhotoModel.findById(photo._id).lean();
