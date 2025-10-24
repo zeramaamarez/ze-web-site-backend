@@ -1,189 +1,60 @@
 import { NextResponse } from 'next/server';
-import { Types } from 'mongoose';
 import { connectMongo } from '@/lib/mongodb';
 import PhotoModel from '@/lib/models/Photo';
-import UploadFileModel from '@/lib/models/UploadFile';
 import { photoSchema } from '@/lib/validations/photo';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import {
-  buildPaginatedResponse,
-  buildRegexFilter,
-  normalizeDocument,
-  normalizeUploadFile,
-  normalizeUploadFileList,
-  parseLegacyPagination,
-  resolveStatusFilter,
-  withPublishedFlag
-} from '@/lib/legacy';
+import { buildPaginatedResponse, buildRegexFilter, parseLegacyPagination, resolveStatusFilter } from '@/lib/legacy';
+import { buildUploadMap, collectPhotoUploadIds, formatPhoto, normalizeFileIdList } from '@/app/api/photos/utils';
 
-function formatPhoto(doc: Record<string, unknown> | null) {
-  if (!doc) return null;
-  const { url, image, ...rest } = doc as typeof doc & { url?: unknown; image?: unknown };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  const normalizedUrl = normalizeUploadFileList(url);
-  const normalizedImage = normalizedUrl.length > 0 ? normalizedUrl[0] : normalizeUploadFile(image);
-  return {
-    ...withPublishedFlag(normalizedRest),
-    url: normalizedUrl,
-    image: normalizedImage
-  };
+const SORT_FIELD_ALIASES = new Map([
+  ['created_at', 'createdAt'],
+  ['updated_at', 'updatedAt'],
+  ['published_at', 'published_at'],
+  ['publishedAt', 'published_at'],
+  ['release_date', 'release_date'],
+  ['releaseDate', 'release_date'],
+  ['createdAt', 'createdAt'],
+  ['updatedAt', 'updatedAt'],
+  ['title', 'title'],
+  ['date', 'date']
+]);
+
+const SORT_FIELDS = new Set(Array.from(SORT_FIELD_ALIASES.values()));
+
+function normalizeSortField(field: string | undefined | null) {
+  if (!field) return 'createdAt';
+  const trimmed = field.trim();
+  if (!trimmed) return 'createdAt';
+  const alias = SORT_FIELD_ALIASES.get(trimmed);
+  return alias ?? trimmed;
 }
-
-function resolveObjectId(value: unknown): Types.ObjectId | null {
-  if (!value) return null;
-  if (value instanceof Types.ObjectId) return value;
-  if (typeof value === 'string' && Types.ObjectId.isValid(value)) {
-    return new Types.ObjectId(value);
-  }
-  if (typeof value === 'object' && value !== null) {
-    const record = value as { _id?: unknown; id?: unknown; ref?: unknown };
-    if (record._id) return resolveObjectId(record._id);
-    if (record.id) return resolveObjectId(record.id);
-    if (record.ref) return resolveObjectId(record.ref);
-  }
-  return null;
-}
-
-function resolveObjectIdString(value: unknown) {
-  const objectId = resolveObjectId(value);
-  if (objectId) {
-    return objectId.toString();
-  }
-  if (typeof value === 'object' && value !== null) {
-    const record = value as { _id?: unknown; id?: unknown };
-    if (typeof record._id === 'string') return record._id;
-    if (typeof record.id === 'string') return record.id;
-  }
-  if (typeof value === 'string' && Types.ObjectId.isValid(value)) {
-    return value;
-  }
-  return null;
-}
-
-function normalizeFileIdList(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [] as string[];
-  }
-
-  return value
-    .map((entry) => resolveObjectIdString(entry))
-    .filter((entry): entry is string => Boolean(entry));
-}
-
-async function hydratePhoto(doc: Record<string, unknown> | null) {
-  if (!doc) return null;
-
-  const result = JSON.parse(JSON.stringify(doc)) as Record<string, unknown> & { url?: unknown; image?: unknown };
-  const rawUrls = Array.isArray((doc as { url?: unknown }).url)
-    ? ((doc as { url?: unknown }).url as unknown[])
-    : [];
-
-  if (rawUrls.length === 0) {
-    result.url = [];
-    result.image = null;
-    return result;
-  }
-
-  const resolvedIds = rawUrls
-    .map((entry) => resolveObjectIdString(entry))
-    .filter((value): value is string => Boolean(value && Types.ObjectId.isValid(value)));
-
-  const uniqueIds = Array.from(new Set(resolvedIds));
-
-  const uploadObjectIds = uniqueIds
-    .map((id) => {
-      try {
-        return new Types.ObjectId(id);
-      } catch (error) {
-        return null;
-      }
-    })
-    .filter((value): value is Types.ObjectId => Boolean(value));
-
-  const uploads = uploadObjectIds.length
-    ? await UploadFileModel.find({ _id: { $in: uploadObjectIds } }).lean()
-    : [];
-
-  const uploadMap = new Map<string, Record<string, unknown>>();
-
-  for (const upload of uploads) {
-    const normalized = normalizeUploadFile(upload);
-    if (!normalized || typeof normalized !== 'object') {
-      continue;
-    }
-    const record = normalized as Record<string, unknown>;
-    const uploadRecord = upload as Record<string, unknown>;
-    const id =
-      typeof record.id === 'string'
-        ? record.id
-        : typeof record._id === 'string'
-        ? record._id
-        : resolveObjectIdString(uploadRecord._id) ?? resolveObjectIdString(uploadRecord.id);
-    if (!id) {
-      continue;
-    }
-    record.id = id;
-    record._id = id;
-    uploadMap.set(id, record);
-  }
-
-  const hydratedUrls = rawUrls
-    .map((entry) => {
-      const id = resolveObjectIdString(entry);
-      if (id) {
-        const match = uploadMap.get(id);
-        if (match) {
-          return match;
-        }
-      }
-
-      const fallback = normalizeUploadFile(entry);
-      if (fallback && typeof fallback === 'object') {
-        const record = fallback as Record<string, unknown>;
-        const fallbackId =
-          typeof record.id === 'string'
-            ? record.id
-            : typeof record._id === 'string'
-            ? record._id
-            : id ?? null;
-        if (fallbackId) {
-          record.id = fallbackId;
-          record._id = fallbackId;
-        }
-        return record;
-      }
-
-      if (id) {
-        return { _id: id, id } as Record<string, unknown>;
-      }
-
-      return null;
-    })
-    .filter((value): value is Record<string, unknown> => Boolean(value));
-
-  result.url = hydratedUrls;
-  result.image = hydratedUrls[0] ?? null;
-
-  return result;
-}
-
-const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'date']);
 
 function buildSort(sortParam?: string | null, directionParam?: string | null) {
-  const sortField = sortParam?.replace(/^-/, '') || 'createdAt';
-  let direction = sortParam?.startsWith('-') ? -1 : 1;
-  if (!sortParam) {
-    direction = 1;
+  let direction: 1 | -1 = 1;
+  let rawField = sortParam || undefined;
+
+  if (rawField && rawField.startsWith('-')) {
+    direction = -1;
+    rawField = rawField.slice(1);
   }
+
+  const sortField = normalizeSortField(rawField);
+
   if (directionParam) {
     const normalizedDirection = directionParam.toLowerCase();
     direction = normalizedDirection === 'asc' ? 1 : -1;
   }
+
   if (!SORT_FIELDS.has(sortField)) {
-    return { createdAt: -1 } as const;
+    return { createdAt: 1, _id: 1 } as const;
   }
-  return { [sortField]: direction } as Record<string, 1 | -1>;
+
+  const sort: Record<string, 1 | -1> = { [sortField]: direction };
+  if (sortField !== '_id') {
+    sort._id = direction;
+  }
+  return sort;
 }
 
 export async function GET(request: Request) {
@@ -241,9 +112,18 @@ export async function GET(request: Request) {
 
   console.log(`✅ Found ${photos.length} photos`);
 
-  const hydrated = await Promise.all(photos.map((photo) => hydratePhoto(photo)));
-  const formatted = hydrated
-    .map((photo) => formatPhoto(photo))
+  const uploadIds = new Set<string>();
+  for (const photo of photos) {
+    const ids = collectPhotoUploadIds(photo as { url?: unknown; image?: unknown });
+    for (const id of ids) {
+      uploadIds.add(id);
+    }
+  }
+
+  const uploadMap = await buildUploadMap(uploadIds);
+
+  const formatted = photos
+    .map((photo) => formatPhoto(photo as Record<string, unknown>, { uploadMap }))
     .filter((value): value is Record<string, unknown> => Boolean(value));
 
   console.log('✅ Photos populados com imagens');
@@ -286,8 +166,8 @@ export async function POST(request: Request) {
     }
 
     const createdDoc = await PhotoModel.findById(photo._id).lean();
-    const created = await hydratePhoto(createdDoc);
-    return NextResponse.json(formatPhoto(created), { status: 201 });
+    const uploadMap = await buildUploadMap(collectPhotoUploadIds(createdDoc));
+    return NextResponse.json(formatPhoto(createdDoc, { uploadMap }), { status: 201 });
   } catch (error) {
     console.error('Photo create error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });
