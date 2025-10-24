@@ -22,7 +22,7 @@ type FormValues = z.infer<typeof formSchema> & { ticket_url?: string };
 export default function EditShowPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [cover, setCover] = useState<UploadedImage[]>([]);
+  const [banner, setBanner] = useState<UploadedImage[]>([]);
   const [loading, setLoading] = useState(true);
 
   const form = useForm<FormValues>({
@@ -65,8 +65,9 @@ export default function EditShowPage() {
         description: data.description || '',
         published: Boolean(data.published_at)
       });
-      if (data.cover) {
-        setCover([{ _id: data.cover._id, url: data.cover.url, name: data.cover.name }]);
+      const image = data.banner ?? data.cover;
+      if (image) {
+        setBanner([{ _id: image._id, url: image.url, name: image.name }]);
       }
       setLoading(false);
     };
@@ -79,7 +80,7 @@ export default function EditShowPage() {
     const payload = {
       ...rest,
       ticket_url: ticket_url ? ticket_url : undefined,
-      cover: cover[0]?._id ?? null,
+      banner: banner[0]?._id ?? null,
       published_at: published ? new Date().toISOString() : null
     };
 
@@ -166,8 +167,8 @@ export default function EditShowPage() {
             <RichTextEditor value={form.watch('description') || ''} onChange={(value) => form.setValue('description', value)} rows={10} />
           </div>
           <div className="space-y-2">
-            <Label>Capa</Label>
-            <ImageUpload value={cover} onChange={setCover} folder="shows" />
+            <Label>Banner</Label>
+            <ImageUpload value={banner} onChange={setBanner} folder="shows" />
           </div>
         </div>
       </form>

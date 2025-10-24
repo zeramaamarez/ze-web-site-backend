@@ -21,7 +21,7 @@ type FormValues = z.infer<typeof formSchema> & { ticket_url?: string };
 
 export default function NewShowPage() {
   const router = useRouter();
-  const [cover, setCover] = useState<UploadedImage[]>([]);
+  const [banner, setBanner] = useState<UploadedImage[]>([]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -45,7 +45,7 @@ export default function NewShowPage() {
     const payload = {
       ...rest,
       ticket_url: ticket_url ? ticket_url : undefined,
-      cover: cover[0]?._id ?? null,
+      banner: banner[0]?._id ?? null,
       published_at: published ? new Date().toISOString() : null
     };
 
@@ -128,8 +128,8 @@ export default function NewShowPage() {
             <RichTextEditor value={form.watch('description') || ''} onChange={(value) => form.setValue('description', value)} rows={10} />
           </div>
           <div className="space-y-2">
-            <Label>Capa</Label>
-            <ImageUpload value={cover} onChange={setCover} folder="shows" />
+            <Label>Banner</Label>
+            <ImageUpload value={banner} onChange={setBanner} folder="shows" />
           </div>
         </div>
       </form>

@@ -11,9 +11,11 @@ function formatShow(doc: Record<string, unknown> | null) {
   if (!doc) return null;
   const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
   const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
+  const banner = normalizeUploadFile(cover);
   return {
     ...withPublishedFlag(normalizedRest),
-    cover: normalizeUploadFile(cover)
+    banner,
+    cover: banner
   };
 }
 
@@ -42,7 +44,13 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
   try {
     const body = await request.json();
-    const parsed = showSchema.partial().safeParse(body);
+    const normalizedPayload = { ...body } as Record<string, unknown>;
+    if ('banner' in normalizedPayload) {
+      normalizedPayload.cover = normalizedPayload.banner;
+      delete normalizedPayload.banner;
+    }
+
+    const parsed = showSchema.partial().safeParse(normalizedPayload);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 400 });
     }

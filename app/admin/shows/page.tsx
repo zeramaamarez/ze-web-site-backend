@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { MapPin, CalendarDays } from 'lucide-react';
+import { MapPin, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ColumnCustomizer } from '@/components/admin/column-customizer';
@@ -25,6 +25,7 @@ interface ShowItem {
   venue: string;
   city: string;
   state?: string;
+  banner?: { url: string } | null;
   cover?: { url: string } | null;
   published_at?: string | null;
   isPast?: boolean;
@@ -35,7 +36,7 @@ type ShowsResponse = LegacyListResponse<ShowItem>;
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
 const columnOptions: ColumnOption[] = [
-  { key: 'cover', label: 'Capa', defaultVisible: false },
+  { key: 'banner', label: 'Banner', defaultVisible: false },
   { key: 'title', label: 'Show', defaultVisible: true },
   { key: 'date', label: 'Data', defaultVisible: true },
   { key: 'city', label: 'Cidade', defaultVisible: true },
@@ -169,15 +170,16 @@ export default function ShowsPage() {
   const allColumns = useMemo<EnhancedColumn<ShowItem>[]>(
     () => [
       {
-        key: 'cover',
-        label: 'Capa',
-        header: 'Capa',
+        key: 'banner',
+        label: 'Banner',
+        header: 'Banner',
         align: 'center',
         defaultVisible: false,
-        render: (item) =>
-          item.cover?.url ? (
+        render: (item) => {
+          const image = item.banner ?? item.cover;
+          return image?.url ? (
             <Image
-              src={item.cover.url}
+              src={image.url}
               alt={item.title}
               width={64}
               height={64}
@@ -185,9 +187,10 @@ export default function ShowsPage() {
             />
           ) : (
             <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-dashed bg-muted/50">
-              <CalendarDays className="h-6 w-6 text-muted-foreground" />
+              <ImageIcon className="h-6 w-6 text-muted-foreground" />
             </div>
-          )
+          );
+        }
       },
       {
         key: 'title',
@@ -279,23 +282,25 @@ export default function ShowsPage() {
   const visibleColumns = useVisibleColumns(allColumns, columnPreferences);
 
   const renderMobileCard = useCallback(
-    (item: ShowItem) => (
-      <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
-        <div className="space-y-2">
-          <div className="flex items-start gap-3">
-            {item.cover?.url ? (
-              <Image
-                src={item.cover.url}
-                alt={item.title}
-                width={64}
-                height={64}
-                className="h-16 w-16 flex-shrink-0 rounded-xl object-cover shadow-sm"
-              />
-            ) : (
-              <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl border border-dashed bg-muted/50">
-                <CalendarDays className="h-6 w-6 text-muted-foreground" />
-              </div>
-            )}
+    (item: ShowItem) => {
+      const image = item.banner ?? item.cover;
+      return (
+        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+          <div className="space-y-2">
+            <div className="flex items-start gap-3">
+              {image?.url ? (
+                <Image
+                  src={image.url}
+                  alt={item.title}
+                  width={64}
+                  height={64}
+                  className="h-16 w-16 flex-shrink-0 rounded-xl object-cover shadow-sm"
+                />
+              ) : (
+                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl border border-dashed bg-muted/50">
+                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                </div>
+              )}
             <div className="flex-1 space-y-1">
               <h3 className="text-lg font-semibold leading-tight text-foreground">{item.title}</h3>
               <p className="text-sm text-muted-foreground">{item.venue}</p>
@@ -328,8 +333,9 @@ export default function ShowsPage() {
             </Button>
           </div>
         </div>
-      </div>
-    ),
+        </div>
+      );
+    },
     [handleDelete]
   );
 

@@ -54,7 +54,7 @@ function ensureHttpsUrl(value: unknown) {
     return `https:${value}`;
   }
 
-  if (value.startsWith('http://')) {
+  if (value.startsWith('http://res.cloudinary.com')) {
     return `https://${value.slice('http://'.length)}`;
   }
 

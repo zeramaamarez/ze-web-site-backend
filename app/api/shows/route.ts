@@ -20,9 +20,11 @@ function formatShow(doc: Record<string, unknown> | null, now = Date.now()) {
         : typeof base.date === 'string'
           ? (base.date as string)
           : undefined;
+  const banner = normalizeUploadFile(cover);
   return {
     ...base,
-    cover: normalizeUploadFile(cover),
+    banner,
+    cover: banner,
     date: dateString ?? base.date,
     isPast: dateString ? new Date(dateString).getTime() < now : false
   };
@@ -58,7 +60,15 @@ export async function GET(request: Request) {
   const { start, limit } = parseLegacyPagination(searchParams);
 
   const andFilters: Record<string, unknown>[] = [];
-  andFilters.push({ published_at: { $ne: null } });
+
+  const normalizedPublished = publishedParam?.toLowerCase();
+  if (!normalizedPublished || normalizedPublished === 'published' || normalizedPublished === 'true') {
+    andFilters.push({ published_at: { $ne: null } });
+  } else if (normalizedPublished === 'draft' || normalizedPublished === 'false') {
+    andFilters.push({ published_at: null });
+  } else if (normalizedPublished !== 'all') {
+    andFilters.push({ published_at: { $ne: null } });
+  }
   if (search) {
     andFilters.push({
       $or: [
@@ -82,10 +92,6 @@ export async function GET(request: Request) {
     andFilters.push({ date: { $lt: new Date() } });
   } else if (status === 'upcoming') {
     andFilters.push({ date: { $gte: new Date() } });
-  }
-
-  if (publishedParam === 'false') {
-    andFilters.push({ published_at: null });
   }
 
   const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
@@ -114,7 +120,15 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const parsed = showSchema.safeParse(body);
+    const normalizedPayload = { ...body } as Record<string, unknown>;
+    if ('banner' in normalizedPayload) {
+      normalizedPayload.cover = normalizedPayload.banner;
+      delete normalizedPayload.banner;
+    } else if (!('cover' in normalizedPayload)) {
+      normalizedPayload.cover = null;
+    }
+
+    const parsed = showSchema.safeParse(normalizedPayload);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 400 });
     }
