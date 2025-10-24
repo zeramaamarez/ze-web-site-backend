@@ -3,16 +3,17 @@ import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 const DvdTrackSchema = new Schema(
   {
     name: { type: String, required: true },
-    composers: String,
     time: String,
-    publishing_company: String,
-    lyric: String,
-    track: { type: Types.ObjectId, ref: 'UploadFile' }
+    lyric: { type: Types.ObjectId, ref: 'Lyric' },
+    data_sheet: String
   },
-  { collection: 'dvd_tracks', timestamps: false }
+  {
+    timestamps: true,
+    collection: 'components_dvd_tracks'
+  }
 );
 
-DvdTrackSchema.index({ name: 'text', composers: 'text', publishing_company: 'text' });
+DvdTrackSchema.index({ name: 'text' });
 
 export type DvdTrack = InferSchemaType<typeof DvdTrackSchema>;
 
