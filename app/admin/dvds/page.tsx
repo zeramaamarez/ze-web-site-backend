@@ -1,16 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import Image from 'next/image';
+import Link from 'next/link';
 import { format } from 'date-fns';
+import { ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { ColumnCustomizer } from '@/components/admin/column-customizer';
+import { DataTable } from '@/components/admin/data-table';
+import { useColumnPreferences, type ColumnOption } from '@/components/admin/hooks/use-column-preferences';
+import { useVisibleColumns, type EnhancedColumn } from '@/components/admin/hooks/use-visible-columns';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { DataTable, type Column } from '@/components/admin/data-table';
 
 interface DvdItem {
   _id: string;
@@ -28,21 +32,30 @@ interface DvdResponse {
     page: number;
     totalPages: number;
     total: number;
-    limit: number;
   };
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
-function formatDate(value?: string) {
+const columnOptions: ColumnOption[] = [
+  { key: 'cover', label: 'Capa', defaultVisible: false },
+  { key: 'title', label: 'Título', defaultVisible: true },
+  { key: 'release_date', label: 'Ano', defaultVisible: false },
+  { key: 'published_at', label: 'Status', defaultVisible: true },
+  { key: 'createdAt', label: 'Criado em', defaultVisible: false },
+  { key: 'updatedAt', label: 'Atualizado em', defaultVisible: false },
+  { key: 'actions', label: 'Ações', alwaysVisible: true }
+];
+
+const formatDate = (value?: string) => {
   if (!value) return '—';
   try {
     return format(new Date(value), 'dd/MM/yyyy');
   } catch (error) {
-    console.error('Failed to format date', error);
+    console.warn('Failed to format date', error);
     return '—';
   }
-}
+};
 
 export default function DvdsPage() {
   const [dvds, setDvds] = useState<DvdItem[]>([]);
@@ -57,6 +70,8 @@ export default function DvdsPage() {
   const [sortKey, setSortKey] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState(false);
+
+  const columnPreferences = useColumnPreferences('table-columns-dvds', columnOptions);
 
   useEffect(() => {
     const handler = setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -141,54 +156,90 @@ export default function DvdsPage() {
     setPage(1);
   };
 
-  const columns: Column<DvdItem>[] = useMemo(
+  const allColumns = useMemo<EnhancedColumn<DvdItem>[]>(
     () => [
       {
         key: 'cover',
+        label: 'Capa',
         header: 'Capa',
         align: 'center',
-        render: (item) => (
-          item.cover ? (
-            <Image src={item.cover.url} alt={item.title} width={48} height={48} className="h-12 w-12 rounded object-cover" />
+        defaultVisible: false,
+        render: (item) =>
+          item.cover?.url ? (
+            <Image
+              src={item.cover.url}
+              alt={item.title}
+              width={64}
+              height={64}
+              className="h-16 w-16 rounded-xl object-cover shadow-sm"
+            />
           ) : (
-            <div className="h-12 w-12 rounded border border-dashed" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-dashed bg-muted/50">
+              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+            </div>
           )
-        )
       },
-      { key: 'title', header: 'Título', sortable: true },
-      { key: 'release_date', header: 'Lançamento', sortable: true },
+      {
+        key: 'title',
+        label: 'Título',
+        header: 'Título',
+        sortable: true,
+        defaultVisible: true,
+        className: 'font-medium'
+      },
+      {
+        key: 'release_date',
+        label: 'Ano',
+        header: 'Ano',
+        sortable: true,
+        defaultVisible: false,
+        render: (item) => formatDate(item.release_date)
+      },
       {
         key: 'published_at',
+        label: 'Status',
         header: 'Status',
         align: 'center',
+        defaultVisible: true,
         render: (item) => (
-          <Badge variant={item.published_at ? 'success' : 'warning'}>
+          <Badge className={item.published_at ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-blue-100 text-blue-700 hover:bg-blue-100'}>
             {item.published_at ? 'Published' : 'Draft'}
           </Badge>
         )
       },
       {
         key: 'createdAt',
+        label: 'Criado em',
         header: 'Criado em',
         sortable: true,
+        defaultVisible: false,
         render: (item) => formatDate(item.createdAt)
       },
       {
         key: 'updatedAt',
+        label: 'Atualizado em',
         header: 'Atualizado em',
         sortable: true,
+        defaultVisible: false,
         render: (item) => formatDate(item.updatedAt)
       },
       {
         key: 'actions',
+        label: 'Ações',
         header: 'Ações',
         align: 'right',
+        alwaysVisible: true,
         render: (item) => (
           <div className="flex items-center justify-end gap-2">
-            <Button asChild variant="outline" size="sm">
+            <Button asChild variant="outline" size="sm" className="h-8 px-3">
               <Link href={`/admin/dvds/${item._id}`}>Editar</Link>
             </Button>
-            <Button variant="destructive" size="sm" onClick={() => void handleDelete(item._id)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 text-red-600 hover:text-red-700"
+              onClick={() => void handleDelete(item._id)}
+            >
               Remover
             </Button>
           </div>
@@ -198,23 +249,76 @@ export default function DvdsPage() {
     [handleDelete]
   );
 
+  const visibleColumns = useVisibleColumns(allColumns, columnPreferences);
+
+  const renderMobileCard = useCallback(
+    (item: DvdItem) => (
+      <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+        <div className="flex items-start gap-3">
+          {item.cover?.url ? (
+            <Image
+              src={item.cover.url}
+              alt={item.title}
+              width={64}
+              height={64}
+              className="h-16 w-16 flex-shrink-0 rounded-xl object-cover shadow-sm"
+            />
+          ) : (
+            <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl border border-dashed bg-muted/50">
+              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+            </div>
+          )}
+          <div className="flex-1 space-y-2">
+            <div>
+              <h3 className="text-lg font-semibold leading-tight text-foreground">{item.title}</h3>
+              <p className="text-sm text-muted-foreground">
+                {item.release_date ? `Lançado em ${formatDate(item.release_date)}` : 'Ano não informado'}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              {item.createdAt && <span className="rounded-full bg-muted px-2 py-1">Criado {formatDate(item.createdAt)}</span>}
+              {item.updatedAt && <span className="rounded-full bg-muted px-2 py-1">Atualizado {formatDate(item.updatedAt)}</span>}
+              <Badge className={item.published_at ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-blue-100 text-blue-700 hover:bg-blue-100'}>
+                {item.published_at ? 'Published' : 'Draft'}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <Button asChild variant="outline" size="sm" className="h-8 px-3">
+                <Link href={`/admin/dvds/${item._id}`}>Editar</Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-3 text-red-600 hover:text-red-700"
+                onClick={() => void handleDelete(item._id)}
+              >
+                Remover
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+    [handleDelete]
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">DVDs</h1>
           <p className="text-sm text-muted-foreground">Visual profissional para gerenciar a discografia em vídeo.</p>
         </div>
-        <Button asChild>
+        <Button asChild className="shadow-lg shadow-primary/20">
           <Link href="/admin/dvds/new">Novo DVD</Link>
         </Button>
       </div>
       <DataTable
-        columns={columns}
+        columns={visibleColumns}
         data={dvds}
         page={page}
         totalPages={totalPages}
-        onPageChange={(newPage) => setPage(newPage)}
+        onPageChange={setPage}
         search={search}
         onSearchChange={(value) => {
           setSearch(value);
@@ -236,9 +340,11 @@ export default function DvdsPage() {
           setPage(1);
         }}
         totalItems={totalItems}
+        renderMobileCard={renderMobileCard}
         toolbar={
-          <div className="flex flex-col gap-3 rounded-md border bg-card p-4 shadow-sm md:flex-row md:items-end md:justify-between">
-            <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <ColumnCustomizer preferences={columnPreferences} />
               <Input
                 value={yearFilter}
                 onChange={(event) => {
@@ -246,6 +352,7 @@ export default function DvdsPage() {
                   setPage(1);
                 }}
                 placeholder="Ano de lançamento"
+                className="h-10 w-48"
               />
               <Select
                 value={statusFilter}
@@ -254,7 +361,7 @@ export default function DvdsPage() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-40">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -265,7 +372,7 @@ export default function DvdsPage() {
               </Select>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={resetFilters}>
+              <Button variant="outline" onClick={resetFilters} className="h-9 px-4">
                 Limpar filtros
               </Button>
             </div>

@@ -1,15 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import Image from 'next/image';
+import Link from 'next/link';
+import { format } from 'date-fns';
+import { ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { ColumnCustomizer } from '@/components/admin/column-customizer';
+import { DataTable } from '@/components/admin/data-table';
+import { useColumnPreferences, type ColumnOption } from '@/components/admin/hooks/use-column-preferences';
+import { useVisibleColumns, type EnhancedColumn } from '@/components/admin/hooks/use-visible-columns';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { DataTable, type Column } from '@/components/admin/data-table';
 
 interface CdItem {
   _id: string;
@@ -17,6 +22,8 @@ interface CdItem {
   company?: string;
   release_date?: string;
   published_at?: string | null;
+  tracksCount?: number;
+  createdAt?: string;
   cover?: { url: string } | null;
 }
 
@@ -26,11 +33,31 @@ interface CdResponse {
     page: number;
     totalPages: number;
     total: number;
-    limit: number;
   };
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
+
+const columnOptions: ColumnOption[] = [
+  { key: 'cover', label: 'Capa', defaultVisible: false },
+  { key: 'title', label: 'Título', defaultVisible: true },
+  { key: 'company', label: 'Gravadora', defaultVisible: false },
+  { key: 'release_date', label: 'Lançamento', defaultVisible: false },
+  { key: 'published_at', label: 'Status', defaultVisible: true },
+  { key: 'tracksCount', label: 'Número de faixas', defaultVisible: false },
+  { key: 'createdAt', label: 'Criado em', defaultVisible: false },
+  { key: 'actions', label: 'Ações', alwaysVisible: true }
+];
+
+const formatDate = (value?: string) => {
+  if (!value) return '—';
+  try {
+    return format(new Date(value), 'dd/MM/yyyy');
+  } catch (error) {
+    console.warn('Failed to format date', error);
+    return '—';
+  }
+};
 
 export default function CdsPage() {
   const [cds, setCds] = useState<CdItem[]>([]);
@@ -46,6 +73,8 @@ export default function CdsPage() {
   const [sortKey, setSortKey] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState(false);
+
+  const columnPreferences = useColumnPreferences('table-columns-cds', columnOptions);
 
   useEffect(() => {
     const handler = setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -135,43 +164,96 @@ export default function CdsPage() {
     setPage(1);
   };
 
-  const columns: Column<CdItem>[] = useMemo(
+  const allColumns = useMemo<EnhancedColumn<CdItem>[]>(
     () => [
       {
         key: 'cover',
+        label: 'Capa',
         header: 'Capa',
         align: 'center',
-        render: (item) => (
-          item.cover ? (
-            <Image src={item.cover.url} alt={item.title} width={48} height={48} className="h-12 w-12 rounded object-cover" />
+        defaultVisible: false,
+        render: (item) =>
+          item.cover?.url ? (
+            <Image
+              src={item.cover.url}
+              alt={item.title}
+              width={64}
+              height={64}
+              className="h-16 w-16 rounded-xl object-cover shadow-sm"
+            />
           ) : (
-            <div className="h-12 w-12 rounded border border-dashed" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-dashed bg-muted/50">
+              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+            </div>
           )
-        )
       },
-      { key: 'title', header: 'Título', sortable: true },
-      { key: 'company', header: 'Gravadora', sortable: true },
-      { key: 'release_date', header: 'Lançamento', sortable: true },
+      {
+        key: 'title',
+        label: 'Título',
+        header: 'Título',
+        sortable: true,
+        defaultVisible: true,
+        className: 'font-medium'
+      },
+      {
+        key: 'company',
+        label: 'Gravadora',
+        header: 'Gravadora',
+        sortable: true,
+        defaultVisible: false
+      },
+      {
+        key: 'release_date',
+        label: 'Lançamento',
+        header: 'Lançamento',
+        sortable: true,
+        defaultVisible: false,
+        render: (item) => formatDate(item.release_date)
+      },
       {
         key: 'published_at',
+        label: 'Status',
         header: 'Status',
         align: 'center',
+        defaultVisible: true,
         render: (item) => (
-          <Badge variant={item.published_at ? 'success' : 'warning'}>
+          <Badge className={item.published_at ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-blue-100 text-blue-700 hover:bg-blue-100'}>
             {item.published_at ? 'Published' : 'Draft'}
           </Badge>
         )
       },
       {
+        key: 'tracksCount',
+        label: 'Número de faixas',
+        header: 'Faixas',
+        defaultVisible: false,
+        render: (item) => item.tracksCount ?? '—'
+      },
+      {
+        key: 'createdAt',
+        label: 'Criado em',
+        header: 'Criado em',
+        sortable: true,
+        defaultVisible: false,
+        render: (item) => formatDate(item.createdAt)
+      },
+      {
         key: 'actions',
+        label: 'Ações',
         header: 'Ações',
         align: 'right',
+        alwaysVisible: true,
         render: (item) => (
           <div className="flex items-center justify-end gap-2">
-            <Button asChild variant="outline" size="sm">
+            <Button asChild variant="outline" size="sm" className="h-8 px-3">
               <Link href={`/admin/cds/${item._id}`}>Editar</Link>
             </Button>
-            <Button variant="destructive" size="sm" onClick={() => void handleDelete(item._id)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 text-red-600 hover:text-red-700"
+              onClick={() => void handleDelete(item._id)}
+            >
               Remover
             </Button>
           </div>
@@ -181,23 +263,76 @@ export default function CdsPage() {
     [handleDelete]
   );
 
+  const visibleColumns = useVisibleColumns(allColumns, columnPreferences);
+
+  const renderMobileCard = useCallback(
+    (item: CdItem) => (
+      <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+        <div className="flex items-start gap-3">
+          {item.cover?.url ? (
+            <Image
+              src={item.cover.url}
+              alt={item.title}
+              width={64}
+              height={64}
+              className="h-16 w-16 flex-shrink-0 rounded-xl object-cover shadow-sm"
+            />
+          ) : (
+            <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl border border-dashed bg-muted/50">
+              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+            </div>
+          )}
+          <div className="flex-1 space-y-2">
+            <div>
+              <h3 className="text-lg font-semibold leading-tight text-foreground">{item.title}</h3>
+              <p className="text-sm text-muted-foreground">
+                {item.company ? `Gravadora: ${item.company}` : 'Gravadora não informada'}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              {item.release_date && <span className="rounded-full bg-muted px-2 py-1">Lançamento {formatDate(item.release_date)}</span>}
+              {item.tracksCount && <span className="rounded-full bg-muted px-2 py-1">{item.tracksCount} faixas</span>}
+              <Badge className={item.published_at ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-blue-100 text-blue-700 hover:bg-blue-100'}>
+                {item.published_at ? 'Published' : 'Draft'}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <Button asChild variant="outline" size="sm" className="h-8 px-3">
+                <Link href={`/admin/cds/${item._id}`}>Editar</Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-3 text-red-600 hover:text-red-700"
+                onClick={() => void handleDelete(item._id)}
+              >
+                Remover
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+    [handleDelete]
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">CDs</h1>
           <p className="text-sm text-muted-foreground">Gerencie os álbuns com um painel profissional.</p>
         </div>
-        <Button asChild>
+        <Button asChild className="shadow-lg shadow-primary/20">
           <Link href="/admin/cds/new">Novo CD</Link>
         </Button>
       </div>
       <DataTable
-        columns={columns}
+        columns={visibleColumns}
         data={cds}
         page={page}
         totalPages={totalPages}
-        onPageChange={(newPage) => setPage(newPage)}
+        onPageChange={setPage}
         search={search}
         onSearchChange={(value) => {
           setSearch(value);
@@ -219,9 +354,11 @@ export default function CdsPage() {
           setPage(1);
         }}
         totalItems={totalItems}
+        renderMobileCard={renderMobileCard}
         toolbar={
-          <div className="flex flex-col gap-3 rounded-md border bg-card p-4 shadow-sm md:flex-row md:items-end md:justify-between">
-            <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <ColumnCustomizer preferences={columnPreferences} />
               <Input
                 value={yearFilter}
                 onChange={(event) => {
@@ -229,6 +366,7 @@ export default function CdsPage() {
                   setPage(1);
                 }}
                 placeholder="Ano de lançamento"
+                className="h-10 w-48"
               />
               <Input
                 value={companyFilter}
@@ -236,7 +374,8 @@ export default function CdsPage() {
                   setCompanyFilter(event.target.value);
                   setPage(1);
                 }}
-                placeholder="Gravadora"
+                placeholder="Filtrar por gravadora"
+                className="h-10 w-56"
               />
               <Select
                 value={statusFilter}
@@ -245,7 +384,7 @@ export default function CdsPage() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-40">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -256,7 +395,7 @@ export default function CdsPage() {
               </Select>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={resetFilters}>
+              <Button variant="outline" onClick={resetFilters} className="h-9 px-4">
                 Limpar filtros
               </Button>
             </div>
