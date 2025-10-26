@@ -138,10 +138,10 @@ export async function GET(request: Request) {
       .sort(sort)
       .skip((page - 1) * pageSize)
       .limit(pageSize)
-      .lean<MediaDocument & { _id: Types.ObjectId; __v?: number }>()
+      .lean<MediaDocument & { _id: Types.ObjectId }>()
   ]);
 
-  const data = mediaItems.map(({ _id, createdAt, updatedAt, __v, ...rest }) => ({
+  const data = mediaItems.map(({ _id, createdAt, updatedAt, ...rest }) => ({
     ...rest,
     _id: _id.toString(),
     createdAt: createdAt ? createdAt.toISOString() : null,

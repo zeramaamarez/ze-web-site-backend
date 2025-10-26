@@ -191,6 +191,9 @@ export function resolvePublishedAt(doc: AnyRecord | null | undefined) {
 
 export function isDocumentPublished(doc: AnyRecord | null | undefined) {
   if (!doc) return false;
+  if (typeof doc.published === 'boolean') {
+    return doc.published;
+  }
   const status = doc.status as unknown;
   if (status === 'published') return true;
   if (status === 'draft') return false;

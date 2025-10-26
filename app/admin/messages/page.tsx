@@ -21,7 +21,7 @@ interface MessageItem {
   city?: string;
   message?: string;
   response?: string;
-  published_at?: string | null;
+  published?: boolean;
   createdAt?: string;
 }
 
@@ -36,7 +36,7 @@ const columnOptions: ColumnOption[] = [
   { key: 'city', label: 'Cidade', defaultVisible: false },
   { key: 'message', label: 'Mensagem', defaultVisible: true },
   { key: 'response', label: 'Resposta', defaultVisible: false },
-  { key: 'published_at', label: 'Status', defaultVisible: true },
+  { key: 'published', label: 'Status', defaultVisible: true },
   { key: 'createdAt', label: 'Data de criação', defaultVisible: true },
   { key: 'actions', label: 'Ações', alwaysVisible: true }
 ];
@@ -106,7 +106,7 @@ export default function MessagesPage() {
 
       const payload = (await response.json()) as MessagesResponse | MessageItem[];
       const { items, pagination } = resolveListResponse(payload, pageSize, page);
-      setMessages(items);
+      setMessages(items.map((item) => ({ ...item, published: Boolean(item.published) })));
       setPage(pagination.page);
       setTotalPages(pagination.totalPages);
       setTotalItems(pagination.total);
@@ -204,14 +204,14 @@ export default function MessagesPage() {
         render: (item) => truncate(item.response, 60)
       },
       {
-        key: 'published_at',
+        key: 'published',
         label: 'Status',
         header: 'Status',
         align: 'center',
         defaultVisible: true,
         render: (item) => (
-          <Badge className={item.published_at ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-blue-100 text-blue-700 hover:bg-blue-100'}>
-            {item.published_at ? 'Published' : 'Draft'}
+          <Badge className={item.published ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
+            {item.published ? 'Publicada' : 'Aguardando moderação'}
           </Badge>
         )
       },
@@ -265,8 +265,8 @@ export default function MessagesPage() {
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             {item.city && <span className="rounded-full bg-muted px-2 py-1">{item.city}</span>}
             <span className="rounded-full bg-muted px-2 py-1">{formatDate(item.createdAt)}</span>
-            <Badge className={item.published_at ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-blue-100 text-blue-700 hover:bg-blue-100'}>
-              {item.published_at ? 'Published' : 'Draft'}
+            <Badge className={item.published ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
+              {item.published ? 'Publicada' : 'Aguardando moderação'}
             </Badge>
           </div>
           {item.response && (
@@ -357,8 +357,8 @@ export default function MessagesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="published">Published</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="published">Publicadas</SelectItem>
+                  <SelectItem value="draft">Aguardando moderação</SelectItem>
                 </SelectContent>
               </Select>
             </div>

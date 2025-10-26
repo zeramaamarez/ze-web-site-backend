@@ -2,10 +2,16 @@ import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 
 const FormatSchema = new Schema(
   {
+    ext: String,
     url: String,
+    hash: String,
+    mime: String,
+    name: String,
+    path: String,
+    size: Number,
+    sizeInBytes: Number,
     width: Number,
     height: Number,
-    size: Number,
     provider_metadata: {
       public_id: String,
       resource_type: String
@@ -16,25 +22,28 @@ const FormatSchema = new Schema(
 
 const RelatedSchema = new Schema(
   {
-    ref: { type: Types.ObjectId, required: true },
-    kind: { type: String, required: true },
-    field: { type: String, required: true }
+    ref: { type: Types.ObjectId },
+    refId: { type: Types.ObjectId },
+    kind: String,
+    field: String,
+    order: Number
   },
-  { _id: false }
+  { _id: false, strict: false }
 );
 
 const UploadFileSchema = new Schema(
   {
-    name: String,
+    name: { type: String, required: true },
     alternativeText: String,
     caption: String,
-    hash: { type: String },
+    hash: { type: String, index: true },
     ext: String,
     mime: String,
     size: Number,
     width: Number,
     height: Number,
     url: { type: String, required: true },
+    previewUrl: String,
     provider: String,
     provider_metadata: {
       public_id: String,
@@ -46,12 +55,20 @@ const UploadFileSchema = new Schema(
       medium: FormatSchema,
       large: FormatSchema
     },
-    related: [RelatedSchema]
+    related: [RelatedSchema],
+    folderPath: String,
+    folder: Schema.Types.Mixed,
+    created_by: { type: Types.ObjectId, ref: 'Admin' },
+    updated_by: { type: Types.ObjectId, ref: 'Admin' }
   },
-  { timestamps: true, collection: 'upload_file' }
+  {
+    collection: 'upload_file',
+    timestamps: true,
+    strict: false
+  }
 );
 
-UploadFileSchema.index({ hash: 1 }, { unique: false });
+UploadFileSchema.index({ hash: 1 });
 
 export type UploadFile = InferSchemaType<typeof UploadFileSchema>;
 

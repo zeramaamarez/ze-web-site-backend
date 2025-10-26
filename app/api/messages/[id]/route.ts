@@ -3,27 +3,30 @@ import { connectMongo } from '@/lib/mongodb';
 import MessageModel from '@/lib/models/Message';
 import { messageSchema } from '@/lib/validations/message';
 import { requireAdmin } from '@/lib/api';
-import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-import { normalizeDocument, normalizeUploadFile, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
 
 function formatMessage(doc: Record<string, unknown> | null) {
   if (!doc) return null;
-  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  return {
-    ...withPublishedFlag(normalizedRest),
-    cover: normalizeUploadFile(cover)
-  };
+  const normalized = (normalizeDocument(doc) ?? {}) as Record<string, unknown>;
+  const withDefaults = {
+    ...normalized,
+    response: typeof normalized.response === 'string' ? normalized.response : '',
+    published: typeof normalized.published === 'boolean'
+      ? normalized.published
+      : normalized.status === 'published'
+  } as Record<string, unknown>;
+  return withPublishedFlag(withDefaults);
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   await connectMongo();
   const identifier = params.id;
+  if (!isObjectId(identifier)) {
+    return NextResponse.json(null, { status: 404 });
+  }
 
-  const message = await MessageModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
-    .populate('cover')
-    .lean();
+  const message = await MessageModel.findById(identifier).lean();
 
   if (!message) {
     return NextResponse.json(null, { status: 404 });
@@ -42,7 +45,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
   try {
     const body = await request.json();
-    const parsed = messageSchema.partial().safeParse(body);
+    const parsed = messageSchema.pick({ response: true }).safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 400 });
     }
@@ -53,23 +56,13 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
     }
 
-    const previousCover = message.cover?.toString();
-
-    Object.assign(message, parsed.data, { updated_by: authResult.session.user!.id });
-    await message.save();
-
-    if (parsed.data.cover && parsed.data.cover !== previousCover) {
-      await attachFile({ fileId: parsed.data.cover, refId: message._id, kind: 'Message', field: 'cover' });
-      await detachFile(previousCover, message._id);
-      await deleteFileIfOrphan(previousCover);
-    } else if (!parsed.data.cover && previousCover) {
-      await detachFile(previousCover, message._id);
-      await deleteFileIfOrphan(previousCover);
-      message.cover = undefined;
-      await message.save();
+    if ('response' in parsed.data) {
+      message.response = parsed.data.response?.trim() ?? '';
     }
 
-    const updated = await MessageModel.findById(message._id).populate('cover').lean();
+    await message.save();
+
+    const updated = await MessageModel.findById(message._id).lean();
     return NextResponse.json(formatMessage(updated));
   } catch (error) {
     console.error('Message update error', error);
@@ -91,13 +84,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
   }
 
-  const coverId = message.cover?.toString();
   await message.deleteOne();
-
-  if (coverId) {
-    await detachFile(coverId, message._id);
-    await deleteFileIfOrphan(coverId);
-  }
 
   return NextResponse.json({ message: 'Mensagem removida' });
 }

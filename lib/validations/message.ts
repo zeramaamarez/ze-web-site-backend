@@ -1,14 +1,13 @@
 import { z } from 'zod';
 
 export const messageSchema = z.object({
-  title: z.string().min(1, 'Título é obrigatório'),
-  content: z.string().min(1, 'Conteúdo é obrigatório'),
-  excerpt: z.string().optional(),
-  cover: z.string().nullable().optional(),
-  private: z.boolean().optional(),
-  status: z.enum(['draft', 'published']).optional(),
-  publishedAt: z.coerce.date().nullable().optional(),
-  published_at: z.coerce.date().nullable().optional()
+  name: z.string().min(1, 'Nome é obrigatório'),
+  email: z.string().email('Email inválido'),
+  city: z.string().min(1, 'Cidade é obrigatória'),
+  state: z.string().min(1, 'Estado é obrigatório'),
+  message: z.string().min(1, 'Mensagem é obrigatória'),
+  response: z.string().optional().nullable(),
+  published: z.boolean().optional()
 });
 
 export type MessageInput = z.infer<typeof messageSchema>;

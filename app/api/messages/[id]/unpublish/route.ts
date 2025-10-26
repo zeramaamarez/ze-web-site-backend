@@ -31,7 +31,7 @@ export async function PATCH(_: Request, { params }: { params: { id: string } }) 
     const updated = await MessageModel.findByIdAndUpdate(
       params.id,
       {
-        $set: { published: true },
+        $set: { published: false },
         $unset: { status: 1, published_at: 1, publishedAt: 1 }
       },
       { new: true, lean: true }
@@ -43,7 +43,7 @@ export async function PATCH(_: Request, { params }: { params: { id: string } }) 
 
     return NextResponse.json(formatMessage(updated));
   } catch (error) {
-    console.error('Message publish error', error);
+    console.error('Message unpublish error', error);
     return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });
   }
 }
