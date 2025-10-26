@@ -25,7 +25,7 @@ interface ShowItem {
   venue: string;
   city: string;
   state?: string;
-  banner?: { url: string } | null;
+  banner?: { url: string }[] | { url: string } | null;
   cover?: { url: string } | null;
   published_at?: string | null;
   isPast?: boolean;
@@ -34,6 +34,16 @@ interface ShowItem {
 type ShowsResponse = LegacyListResponse<ShowItem>;
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+
+const resolveBannerList = (banner: ShowItem['banner']) => {
+  if (Array.isArray(banner)) {
+    return banner;
+  }
+  if (banner && typeof banner === 'object') {
+    return [banner];
+  }
+  return [] as { url: string }[];
+};
 
 const columnOptions: ColumnOption[] = [
   { key: 'banner', label: 'Banner', defaultVisible: false },
@@ -176,7 +186,8 @@ export default function ShowsPage() {
         align: 'center',
         defaultVisible: false,
         render: (item) => {
-          const image = item.banner ?? item.cover;
+          const bannerList = resolveBannerList(item.banner);
+          const image = bannerList[0] ?? item.cover;
           return image?.url ? (
             <Image
               src={image.url}
@@ -198,12 +209,18 @@ export default function ShowsPage() {
         header: 'Show',
         sortable: true,
         defaultVisible: true,
-        render: (item) => (
-          <div>
-            <p className="font-medium text-foreground">{item.title}</p>
-            <p className="text-xs text-muted-foreground">{item.venue}</p>
-          </div>
-        )
+        render: (item) => {
+          const showLocation = item.city || item.title;
+          return (
+            <div>
+              <p className="font-medium text-foreground">
+                {showLocation}
+                {item.state ? ` - ${item.state}` : ''}
+              </p>
+              {item.venue ? <p className="text-xs text-muted-foreground">{item.venue}</p> : null}
+            </div>
+          );
+        }
       },
       {
         key: 'date',
@@ -283,7 +300,8 @@ export default function ShowsPage() {
 
   const renderMobileCard = useCallback(
     (item: ShowItem) => {
-      const image = item.banner ?? item.cover;
+      const bannerList = resolveBannerList(item.banner);
+      const image = bannerList[0] ?? item.cover;
       return (
         <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
           <div className="space-y-2">
@@ -301,9 +319,10 @@ export default function ShowsPage() {
                   <ImageIcon className="h-6 w-6 text-muted-foreground" />
                 </div>
               )}
-            <div className="flex-1 space-y-1">
-              <h3 className="text-lg font-semibold leading-tight text-foreground">{item.title}</h3>
-              <p className="text-sm text-muted-foreground">{item.venue}</p>
+              <div className="flex-1 space-y-1">
+                <h3 className="text-lg font-semibold leading-tight text-foreground">{item.title}</h3>
+                <p className="text-sm text-muted-foreground">{item.venue}</p>
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -332,7 +351,6 @@ export default function ShowsPage() {
               Remover
             </Button>
           </div>
-        </div>
         </div>
       );
     },

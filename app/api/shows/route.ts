@@ -4,11 +4,17 @@ import ShowModel from '@/lib/models/Show';
 import { showSchema } from '@/lib/validations/show';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import { normalizeDocument, normalizeUploadFile, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import {
+  normalizeDocument,
+  normalizeUploadFile,
+  normalizeUploadFileList,
+  parseLegacyPagination,
+  withPublishedFlag
+} from '@/lib/legacy';
 
 function formatShow(doc: Record<string, unknown> | null, now = Date.now()) {
   if (!doc) return null;
-  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
+  const { cover, ...rest } = doc as typeof doc & { banner?: unknown; cover?: unknown };
   const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
   const base = withPublishedFlag(normalizedRest);
   const rawDate = (doc as { date?: unknown }).date;
@@ -20,11 +26,13 @@ function formatShow(doc: Record<string, unknown> | null, now = Date.now()) {
         : typeof base.date === 'string'
           ? (base.date as string)
           : undefined;
-  const banner = normalizeUploadFile(cover);
+  const normalizedBannerList = normalizeUploadFileList((doc as { banner?: unknown }).banner);
+  const coverBanner = normalizeUploadFile(cover);
+  const primaryBanner = normalizedBannerList[0] ?? coverBanner;
   return {
     ...base,
-    banner,
-    cover: banner,
+    banner: normalizedBannerList,
+    cover: primaryBanner,
     date: dateString ?? base.date,
     isPast: dateString ? new Date(dateString).getTime() < now : false
   };
@@ -97,7 +105,7 @@ export async function GET(request: Request) {
   const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
 
   await connectMongo();
-  const query = ShowModel.find(filter).sort(sort).populate('cover').lean();
+  const query = ShowModel.find(filter).sort(sort).populate('cover').populate('banner').lean();
 
   if (typeof start === 'number' && start > 0) {
     query.skip(start);

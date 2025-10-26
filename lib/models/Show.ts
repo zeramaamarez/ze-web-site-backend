@@ -15,6 +15,7 @@ const ShowSchema = new Schema(
     address: String,
     ticket_url: String,
     description: String,
+    banner: [{ type: Types.ObjectId, ref: 'UploadFile' }],
     cover: { type: Types.ObjectId, ref: 'UploadFile' },
     published_at: { type: Date, default: null },
     created_by: { type: Types.ObjectId, ref: 'Admin' },
