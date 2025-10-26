@@ -23,7 +23,15 @@ interface PhotoItem {
   album?: string;
   date?: string;
   location?: string;
-  images?: { url: string }[];
+  image?: {
+    url: string;
+    formats?: {
+      thumbnail?: {
+        url: string;
+      } | null;
+    } | null;
+  } | null;
+  url?: Array<{ url: string }>;
   published_at?: string | null;
   createdAt?: string;
 }
@@ -33,7 +41,7 @@ type PhotosResponse = LegacyListResponse<PhotoItem>;
 const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 
 const columnOptions: ColumnOption[] = [
-  { key: 'images', label: 'Thumbnail', defaultVisible: true },
+  { key: 'image', label: 'Thumbnail', defaultVisible: true },
   { key: 'title', label: 'Título', defaultVisible: true },
   { key: 'album', label: 'Álbum', defaultVisible: false },
   { key: 'date', label: 'Data', defaultVisible: true },
@@ -162,15 +170,18 @@ export default function PhotosPage() {
   const allColumns = useMemo<EnhancedColumn<PhotoItem>[]>(
     () => [
       {
-        key: 'images',
+        key: 'image',
         label: 'Thumbnail',
         header: 'Imagem',
         align: 'center',
         defaultVisible: true,
-        render: (item) =>
-          item.images?.[0]?.url ? (
+        render: (item) => {
+          const thumbnailUrl =
+            item.image?.formats?.thumbnail?.url || item.image?.url || item.url?.[0]?.url;
+
+          return thumbnailUrl ? (
             <Image
-              src={item.images[0].url}
+              src={thumbnailUrl}
               alt={item.title}
               width={64}
               height={64}
@@ -180,7 +191,8 @@ export default function PhotosPage() {
             <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-dashed bg-muted/50">
               <Images className="h-6 w-6 text-muted-foreground" />
             </div>
-          )
+          );
+        }
       },
       {
         key: 'title',
@@ -261,53 +273,58 @@ export default function PhotosPage() {
   const visibleColumns = useVisibleColumns(allColumns, columnPreferences);
 
   const renderMobileCard = useCallback(
-    (item: PhotoItem) => (
-      <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-          {item.images?.[0]?.url ? (
-            <Image
-              src={item.images[0].url}
-              alt={item.title}
-              width={320}
-              height={200}
-              className="h-32 w-full rounded-xl object-cover shadow-sm sm:h-20 sm:w-32"
-            />
-          ) : (
-            <div className="flex h-32 w-full items-center justify-center rounded-xl border border-dashed bg-muted/50 text-muted-foreground sm:h-20 sm:w-32">
-              <Images className="h-6 w-6" />
-            </div>
-          )}
-          <div className="flex-1 space-y-2">
-            <div>
-              <h3 className="text-lg font-semibold leading-tight text-foreground">{item.title}</h3>
-              <p className="text-sm text-muted-foreground">
-                {item.album ? `Álbum: ${item.album}` : 'Álbum não informado'}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-              {item.date && <span className="rounded-full bg-muted px-2 py-1">{formatDate(item.date)}</span>}
-              {item.location && <span className="rounded-full bg-muted px-2 py-1">{item.location}</span>}
-              <Badge className={item.published_at ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-blue-100 text-blue-700 hover:bg-blue-100'}>
-                {item.published_at ? 'Published' : 'Draft'}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-2 pt-1">
-              <Button asChild variant="outline" size="sm" className="h-8 px-3">
-                <Link href={`/admin/photos/${item._id}`}>Editar</Link>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 px-3 text-red-600 hover:text-red-700"
-                onClick={() => void handleDelete(item._id)}
-              >
-                Remover
-              </Button>
+    (item: PhotoItem) => {
+      const thumbnailUrl =
+        item.image?.formats?.thumbnail?.url || item.image?.url || item.url?.[0]?.url;
+
+      return (
+        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            {thumbnailUrl ? (
+              <Image
+                src={thumbnailUrl}
+                alt={item.title}
+                width={320}
+                height={200}
+                className="h-32 w-full rounded-xl object-cover shadow-sm sm:h-20 sm:w-32"
+              />
+            ) : (
+              <div className="flex h-32 w-full items-center justify-center rounded-xl border border-dashed bg-muted/50 text-muted-foreground sm:h-20 sm:w-32">
+                <Images className="h-6 w-6" />
+              </div>
+            )}
+            <div className="flex-1 space-y-2">
+              <div>
+                <h3 className="text-lg font-semibold leading-tight text-foreground">{item.title}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {item.album ? `Álbum: ${item.album}` : 'Álbum não informado'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {item.date && <span className="rounded-full bg-muted px-2 py-1">{formatDate(item.date)}</span>}
+                {item.location && <span className="rounded-full bg-muted px-2 py-1">{item.location}</span>}
+                <Badge className={item.published_at ? 'bg-green-100 text-green-700 hover:bg-green-100' : 'bg-blue-100 text-blue-700 hover:bg-blue-100'}>
+                  {item.published_at ? 'Published' : 'Draft'}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <Button asChild variant="outline" size="sm" className="h-8 px-3">
+                  <Link href={`/admin/photos/${item._id}`}>Editar</Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-3 text-red-600 hover:text-red-700"
+                  onClick={() => void handleDelete(item._id)}
+                >
+                  Remover
+                </Button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    ),
+      );
+    },
     [handleDelete]
   );
 
