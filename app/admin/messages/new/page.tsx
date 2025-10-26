@@ -13,11 +13,10 @@ import { toast } from 'sonner';
 const formSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
   email: z.string().email('Email inválido'),
-  city: z.string().optional(),
-  state: z.string().optional(),
+  city: z.string().min(1, 'Cidade é obrigatória'),
+  state: z.string().min(1, 'Estado é obrigatório'),
   message: z.string().min(1, 'Mensagem é obrigatória'),
-  response: z.string().optional(),
-  private: z.boolean()
+  response: z.string().optional()
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -33,26 +32,20 @@ export default function NewMessagePage() {
       city: '',
       state: '',
       message: '',
-      response: '',
-      private: true
+      response: ''
     }
   });
 
   const onSubmit = async (values: FormValues) => {
-    const responseText = values.response?.trim() ?? '';
-    const payload: Record<string, unknown> = {
+    const payload = {
       name: values.name.trim(),
       email: values.email.trim(),
-      city: values.city?.trim() || undefined,
-      state: values.state?.trim() || undefined,
+      city: values.city.trim(),
+      state: values.state.trim(),
       message: values.message.trim(),
-      response: responseText,
-      private: values.private
-    };
-
-    if (!values.private) {
-      payload.published_at = new Date().toISOString();
-    }
+      response: values.response?.trim() ?? '',
+      publicada: false
+    } as const;
 
     try {
       const response = await fetch('/api/messages', {
@@ -80,13 +73,13 @@ export default function NewMessagePage() {
       <div>
         <h1 className="text-3xl font-semibold">Nova mensagem</h1>
         <p className="text-sm text-muted-foreground">
-          Crie manualmente uma mensagem de fã ou registre respostas recebidas fora do formulário público.
+          Cadastre manualmente uma mensagem recebida fora do formulário público.
         </p>
       </div>
       <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
         <section className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="name">Name *</Label>
+            <Label htmlFor="name">Nome *</Label>
             <Input id="name" {...form.register('name')} placeholder="Nome do fã" />
             {form.formState.errors.name && <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>}
           </div>
@@ -96,30 +89,28 @@ export default function NewMessagePage() {
             {form.formState.errors.email && <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="city">City</Label>
+            <Label htmlFor="city">Cidade *</Label>
             <Input id="city" {...form.register('city')} placeholder="Cidade" />
+            {form.formState.errors.city && <p className="text-sm text-destructive">{form.formState.errors.city.message}</p>}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="state">State</Label>
-            <Input id="state" {...form.register('state')} placeholder="Estado" />
+            <Label htmlFor="state">Estado *</Label>
+            <Input id="state" {...form.register('state')} placeholder="Estado/UF" />
+            {form.formState.errors.state && <p className="text-sm text-destructive">{form.formState.errors.state.message}</p>}
           </div>
         </section>
 
         <section className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="message">Message *</Label>
+            <Label htmlFor="message">Mensagem *</Label>
             <Textarea id="message" rows={6} {...form.register('message')} placeholder="Mensagem do fã" />
-            {form.formState.errors.message && <p className="text-sm text-destructive">{form.formState.errors.message.message}</p>}
+            {form.formState.errors.message && (
+              <p className="text-sm text-destructive">{form.formState.errors.message.message}</p>
+            )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="response">Response</Label>
+            <Label htmlFor="response">Resposta</Label>
             <Textarea id="response" rows={6} {...form.register('response')} placeholder="Resposta opcional do moderador" />
-          </div>
-          <div className="flex items-center gap-2">
-            <input id="private" type="checkbox" className="h-4 w-4" {...form.register('private')} />
-            <Label htmlFor="private" className="text-sm font-medium">
-              Private
-            </Label>
           </div>
         </section>
 

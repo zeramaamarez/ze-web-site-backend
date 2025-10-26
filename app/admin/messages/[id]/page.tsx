@@ -13,8 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 
 const formSchema = z.object({
-  response: z.string().optional(),
-  private: z.boolean()
+  response: z.string().optional()
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -27,9 +26,7 @@ type MessageDetails = {
   state?: string | null;
   message: string;
   response?: string | null;
-  private?: boolean | null;
-  published_at?: string | null;
-  status?: 'draft' | 'published';
+  publicada?: boolean;
   createdAt?: string;
 };
 
@@ -39,13 +36,13 @@ export default function EditMessagePage() {
   const [message, setMessage] = useState<MessageDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isUnpublishing, setIsUnpublishing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      response: '',
-      private: true
+      response: ''
     }
   });
 
@@ -66,8 +63,7 @@ export default function EditMessagePage() {
       }
       setMessage(data);
       form.reset({
-        response: data.response ?? '',
-        private: data.private ?? !data.published_at
+        response: data.response ?? ''
       });
     } catch (error) {
       console.error('Failed to load message', error);
@@ -82,9 +78,6 @@ export default function EditMessagePage() {
     void fetchMessage();
   }, [fetchMessage]);
 
-  const isPrivate = form.watch('private');
-  const persistedPrivate = message?.private ?? !message?.published_at;
-
   const formattedCreatedAt = useMemo(() => {
     if (!message?.createdAt) return null;
     const date = new Date(message.createdAt);
@@ -97,23 +90,11 @@ export default function EditMessagePage() {
 
     const responseText = values.response?.trim() ?? '';
 
-    const payload: Record<string, unknown> = {
-      response: responseText,
-      private: values.private
-    };
-
-    if (!values.private) {
-      const publishedAt = message.published_at ? new Date(message.published_at) : new Date();
-      payload.published_at = publishedAt.toISOString();
-    } else {
-      payload.published_at = null;
-    }
-
     try {
       const response = await fetch(`/api/messages/${message._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ response: responseText })
       });
 
       if (!response.ok) {
@@ -124,11 +105,8 @@ export default function EditMessagePage() {
 
       const updated = (await response.json()) as MessageDetails;
       setMessage(updated);
-      form.reset({
-        response: updated.response ?? '',
-        private: updated.private ?? !updated.published_at
-      });
-      toast.success('Mensagem atualizada');
+      form.reset({ response: updated.response ?? '' });
+      toast.success('Mensagem salva');
     } catch (error) {
       console.error('Failed to update message', error);
       toast.error('Erro ao atualizar mensagem');
@@ -136,7 +114,7 @@ export default function EditMessagePage() {
   };
 
   const handlePublish = async () => {
-    if (!message || !isPrivate) return;
+    if (!message || message.publicada) return;
     setIsPublishing(true);
     try {
       const response = await fetch(`/api/messages/${message._id}/publish`, { method: 'PATCH' });
@@ -145,25 +123,35 @@ export default function EditMessagePage() {
         toast.error((data as { error?: string } | null)?.error || 'Erro ao publicar mensagem');
         return;
       }
-      const data = (await response.json()) as { published_at?: string | null; private?: boolean | null; status?: string | null };
-      const publishedAt = data.published_at ?? new Date().toISOString();
-      setMessage((current) =>
-        current
-          ? {
-              ...current,
-              private: data.private ?? false,
-              published_at: publishedAt,
-              status: (data.status as MessageDetails['status']) ?? 'published'
-            }
-          : current
-      );
-      form.setValue('private', false);
+      const updated = (await response.json()) as MessageDetails;
+      setMessage(updated);
       toast.success('Mensagem publicada');
     } catch (error) {
       console.error('Failed to publish message', error);
       toast.error('Erro ao publicar mensagem');
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  const handleUnpublish = async () => {
+    if (!message || !message.publicada) return;
+    setIsUnpublishing(true);
+    try {
+      const response = await fetch(`/api/messages/${message._id}/unpublish`, { method: 'PATCH' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        toast.error((data as { error?: string } | null)?.error || 'Erro ao despublicar mensagem');
+        return;
+      }
+      const updated = (await response.json()) as MessageDetails;
+      setMessage(updated);
+      toast.success('Mensagem despublicada');
+    } catch (error) {
+      console.error('Failed to unpublish message', error);
+      toast.error('Erro ao despublicar mensagem');
+    } finally {
+      setIsUnpublishing(false);
     }
   };
 
@@ -196,6 +184,10 @@ export default function EditMessagePage() {
     return null;
   }
 
+  const statusBadge = message.publicada
+    ? { label: 'Publicada', className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' }
+    : { label: 'Aguardando moderação', className: 'bg-amber-100 text-amber-700 hover:bg-amber-100' };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -203,30 +195,35 @@ export default function EditMessagePage() {
           <h1 className="text-3xl font-semibold">Editar mensagem</h1>
           <p className="text-sm text-muted-foreground">Revise e modere as mensagens enviadas pelos fãs.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={handlePublish} disabled={isPublishing || !isPrivate}>
-            {isPublishing ? 'Publicando...' : 'Publish'}
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {!message.publicada && (
+            <Button type="button" onClick={handlePublish} disabled={isPublishing}>
+              {isPublishing ? 'Publicando...' : 'Publicar'}
+            </Button>
+          )}
+          {message.publicada && (
+            <Button type="button" variant="outline" onClick={handleUnpublish} disabled={isUnpublishing}>
+              {isUnpublishing ? 'Despublicando...' : 'Despublicar'}
+            </Button>
+          )}
           <Button type="submit" form="message-form" disabled={form.formState.isSubmitting} variant="secondary">
-            {form.formState.isSubmitting ? 'Salvando...' : 'Save'}
+            {form.formState.isSubmitting ? 'Salvando...' : 'Salvar'}
           </Button>
           <Button type="button" variant="destructive" onClick={handleDelete} disabled={isDeleting}>
-            {isDeleting ? 'Excluindo...' : 'Delete this entry'}
+            {isDeleting ? 'Excluindo...' : 'Deletar'}
           </Button>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
         {formattedCreatedAt && <span>Recebida em {formattedCreatedAt}</span>}
-        <Badge className={persistedPrivate ? 'bg-blue-100 text-blue-700 hover:bg-blue-100' : 'bg-green-100 text-green-700 hover:bg-green-100'}>
-          {persistedPrivate ? 'Draft' : 'Published'}
-        </Badge>
+        <Badge className={statusBadge.className}>{statusBadge.label}</Badge>
       </div>
 
       <form id="message-form" className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
         <section className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
+            <Label htmlFor="name">Nome</Label>
             <Input id="name" value={message.name} readOnly disabled />
           </div>
           <div className="space-y-2">
@@ -234,32 +231,31 @@ export default function EditMessagePage() {
             <Input id="email" value={message.email} readOnly disabled />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="city">City</Label>
+            <Label htmlFor="city">Cidade</Label>
             <Input id="city" value={message.city ?? ''} readOnly disabled />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="state">State</Label>
+            <Label htmlFor="state">Estado</Label>
             <Input id="state" value={message.state ?? ''} readOnly disabled />
           </div>
         </section>
 
         <section className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="message">Message</Label>
+            <Label htmlFor="message">Mensagem</Label>
             <Textarea id="message" value={message.message} readOnly disabled rows={6} className="resize-none" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="response">Response</Label>
-            <Textarea id="response" rows={6} {...form.register('response')} placeholder="Escreva uma resposta opcional para o fã" />
+            <Label htmlFor="response">Resposta</Label>
+            <Textarea
+              id="response"
+              rows={6}
+              {...form.register('response')}
+              placeholder="Escreva uma resposta opcional para o fã"
+            />
             {form.formState.errors.response && (
               <p className="text-sm text-destructive">{form.formState.errors.response.message}</p>
             )}
-          </div>
-          <div className="flex items-center gap-2">
-            <input id="private" type="checkbox" className="h-4 w-4" {...form.register('private')} />
-            <Label htmlFor="private" className="text-sm font-medium">
-              Private
-            </Label>
           </div>
         </section>
       </form>

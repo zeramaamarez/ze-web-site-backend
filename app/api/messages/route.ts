@@ -3,19 +3,18 @@ import { connectMongo } from '@/lib/mongodb';
 import MessageModel from '@/lib/models/Message';
 import { messageSchema } from '@/lib/validations/message';
 import { requireAdmin } from '@/lib/api';
-import {
-  buildPaginatedResponse,
-  buildRegexFilter,
-  normalizeDocument,
-  parseLegacyPagination,
-  resolveStatusFilter,
-  withPublishedFlag
-} from '@/lib/legacy';
+import { buildPaginatedResponse, buildRegexFilter, normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
 
 function formatMessage(doc: Record<string, unknown> | null) {
   if (!doc) return null;
   const normalized = (normalizeDocument(doc) ?? {}) as Record<string, unknown>;
-  return withPublishedFlag(normalized);
+  if (!normalized) return null;
+  const withDefaults = {
+    ...normalized,
+    response: typeof normalized.response === 'string' ? normalized.response : '',
+    publicada: Boolean(normalized.publicada)
+  } as Record<string, unknown>;
+  return withPublishedFlag(withDefaults);
 }
 
 const SORT_FIELDS = new Map([
@@ -48,9 +47,17 @@ export async function GET(request: Request) {
   const { start, limit, shouldPaginate, page } = parseLegacyPagination(searchParams);
 
   const filters: Record<string, unknown>[] = [];
-  const statusFilter = resolveStatusFilter(searchParams, { defaultStatus: shouldPaginate ? 'all' : undefined });
-  if (statusFilter) {
-    filters.push(statusFilter);
+
+  const statusParam = searchParams.get('status');
+  if (statusParam === 'published') {
+    filters.push({ publicada: true });
+  } else if (statusParam === 'draft') {
+    filters.push({ publicada: false });
+  }
+
+  const publicadaParam = searchParams.get('publicada');
+  if (publicadaParam != null) {
+    filters.push({ publicada: publicadaParam === 'true' || publicadaParam === '1' });
   }
 
   if (search) {
@@ -69,6 +76,10 @@ export async function GET(request: Request) {
 
   if (city) {
     filters.push({ city: { $regex: city, $options: 'i' } });
+  }
+
+  if (!filters.some((entry) => Object.prototype.hasOwnProperty.call(entry, 'publicada')) && !shouldPaginate) {
+    filters.push({ publicada: true });
   }
 
   const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
@@ -109,11 +120,19 @@ export async function POST(request: Request) {
     }
 
     await connectMongo();
-    const message = await MessageModel.create({
-      ...parsed.data,
+    const payload = {
+      name: parsed.data.name.trim(),
+      email: parsed.data.email.trim(),
+      city: parsed.data.city.trim(),
+      state: parsed.data.state.trim(),
+      message: parsed.data.message.trim(),
+      response: parsed.data.response?.trim() ?? '',
+      publicada: parsed.data.publicada ?? false,
       created_by: authResult.session.user!.id,
       updated_by: authResult.session.user!.id
-    });
+    } as const;
+
+    const message = await MessageModel.create(payload);
 
     const created = await MessageModel.findById(message._id).lean();
     return NextResponse.json(formatMessage(created), { status: 201 });

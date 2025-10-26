@@ -30,8 +30,8 @@ export async function PATCH(_: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
   }
 
-  if (!message.publicada) {
-    message.publicada = true;
+  if (message.publicada) {
+    message.publicada = false;
     message.updated_by = authResult.session.user!.id;
     await message.save();
   }

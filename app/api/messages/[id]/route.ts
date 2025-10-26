@@ -9,7 +9,12 @@ import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
 function formatMessage(doc: Record<string, unknown> | null) {
   if (!doc) return null;
   const normalized = (normalizeDocument(doc) ?? {}) as Record<string, unknown>;
-  return withPublishedFlag(normalized);
+  const withDefaults = {
+    ...normalized,
+    response: typeof normalized.response === 'string' ? normalized.response : '',
+    publicada: Boolean(normalized.publicada)
+  } as Record<string, unknown>;
+  return withPublishedFlag(withDefaults);
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -38,7 +43,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
   try {
     const body = await request.json();
-    const parsed = messageSchema.partial().safeParse(body);
+    const parsed = messageSchema.pick({ response: true }).safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 400 });
     }
@@ -49,48 +54,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
     }
 
-    const { private: privateValue, published_at, publishedAt, response, status: _status, ...rest } = parsed.data;
-
-    Object.assign(message, rest, { updated_by: authResult.session.user!.id });
-
-    if (response !== undefined) {
-      message.response = response ?? undefined;
+    if ('response' in parsed.data) {
+      message.response = parsed.data.response?.trim() ?? '';
     }
-
-    const hasPublishedUpdate = Object.prototype.hasOwnProperty.call(parsed.data, 'published_at') ||
-      Object.prototype.hasOwnProperty.call(parsed.data, 'publishedAt');
-
-    if (hasPublishedUpdate) {
-      const nextPublishedAt = published_at ?? publishedAt ?? null;
-      if (nextPublishedAt) {
-        message.published_at = nextPublishedAt;
-        message.publishedAt = nextPublishedAt;
-        message.private = false;
-        message.status = 'published';
-      } else {
-        message.published_at = null;
-        message.publishedAt = null;
-        message.private = true;
-        message.status = 'draft';
-      }
-    }
-
-    if (privateValue !== undefined) {
-      if (privateValue) {
-        message.private = true;
-        message.published_at = null;
-        message.publishedAt = null;
-        message.status = 'draft';
-      } else {
-        message.private = false;
-        if (!message.published_at) {
-          const nextPublishedAt = new Date();
-          message.published_at = nextPublishedAt;
-          message.publishedAt = nextPublishedAt;
-        }
-        message.status = 'published';
-      }
-    }
+    message.updated_by = authResult.session.user!.id;
 
     await message.save();
 

@@ -71,7 +71,7 @@ async function getStats() {
     LyricModel.countDocuments(),
     LyricModel.countDocuments({ published_at: { $ne: null } }),
     MessageModel.countDocuments(),
-    MessageModel.countDocuments({ published_at: { $ne: null } }),
+    MessageModel.countDocuments({ publicada: true }),
     PhotoModel.countDocuments(),
     PhotoModel.countDocuments({ published_at: { $ne: null } }),
     ShowModel.countDocuments(),
