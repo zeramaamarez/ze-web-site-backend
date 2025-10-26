@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { connectMongo } from '@/lib/mongodb';
 import MessageModel from '@/lib/models/Message';
 import { messageSchema } from '@/lib/validations/message';
-import { requireAdmin } from '@/lib/api';
+import { auth } from '@/lib/auth';
 import { buildPaginatedResponse, buildRegexFilter, normalizeDocument, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
 
 function formatMessage(doc: Record<string, unknown> | null) {
@@ -47,6 +47,8 @@ export async function GET(request: Request) {
   const search = searchParams.get('search');
   const city = searchParams.get('city');
   const { start, limit, shouldPaginate, page } = parseLegacyPagination(searchParams);
+  const session = await auth();
+  const isAdminRequest = Boolean(session?.user && (session.user.role === 'admin' || session.user.role === 'super_admin'));
 
   const filters: Record<string, unknown>[] = [];
 
@@ -57,7 +59,7 @@ export async function GET(request: Request) {
     filters.push({ published: false });
   }
 
-  const publishedParam = searchParams.get('published') ?? searchParams.get('publicada');
+  const publishedParam = searchParams.get('published');
   if (publishedParam != null) {
     filters.push({ published: publishedParam === 'true' || publishedParam === '1' });
   }
@@ -80,7 +82,7 @@ export async function GET(request: Request) {
     filters.push({ city: { $regex: city, $options: 'i' } });
   }
 
-  if (!filters.some((entry) => Object.prototype.hasOwnProperty.call(entry, 'published')) && !shouldPaginate) {
+  if (!isAdminRequest) {
     filters.push({ published: true });
   }
 
@@ -111,15 +113,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authResult = await requireAdmin();
-  if ('response' in authResult) return authResult.response;
-
   try {
     const body = await request.json();
     const parsed = messageSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 400 });
     }
+
+    const session = await auth();
 
     await connectMongo();
     const payload = {
@@ -129,9 +130,12 @@ export async function POST(request: Request) {
       state: parsed.data.state.trim(),
       message: parsed.data.message.trim(),
       response: parsed.data.response?.trim() ?? '',
-      published: parsed.data.published ?? false,
-      created_by: authResult.session.user!.id
-    } as const;
+      published: false
+    } as Record<string, unknown>;
+
+    if (session?.user?.id) {
+      payload.created_by = session.user.id;
+    }
 
     const message = await MessageModel.create(payload);
 
