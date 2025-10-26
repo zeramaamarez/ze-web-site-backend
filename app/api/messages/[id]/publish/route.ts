@@ -18,9 +18,20 @@ export async function PATCH(_: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
   }
 
-  message.published_at = message.published_at ? null : new Date();
+  if (message.published_at) {
+    message.published_at = null;
+    message.publishedAt = null;
+    message.private = true;
+    message.status = 'draft';
+  } else {
+    const now = new Date();
+    message.published_at = now;
+    message.publishedAt = now;
+    message.private = false;
+    message.status = 'published';
+  }
   message.updated_by = authResult.session.user!.id;
   await message.save();
 
-  return NextResponse.json({ published_at: message.published_at });
+  return NextResponse.json({ published_at: message.published_at, private: message.private, status: message.status });
 }

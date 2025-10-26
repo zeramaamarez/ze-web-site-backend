@@ -3,27 +3,23 @@ import { connectMongo } from '@/lib/mongodb';
 import MessageModel from '@/lib/models/Message';
 import { messageSchema } from '@/lib/validations/message';
 import { requireAdmin } from '@/lib/api';
-import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
-import { normalizeDocument, normalizeUploadFile, withPublishedFlag } from '@/lib/legacy';
+import { normalizeDocument, withPublishedFlag } from '@/lib/legacy';
 
 function formatMessage(doc: Record<string, unknown> | null) {
   if (!doc) return null;
-  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  return {
-    ...withPublishedFlag(normalizedRest),
-    cover: normalizeUploadFile(cover)
-  };
+  const normalized = (normalizeDocument(doc) ?? {}) as Record<string, unknown>;
+  return withPublishedFlag(normalized);
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   await connectMongo();
   const identifier = params.id;
+  if (!isObjectId(identifier)) {
+    return NextResponse.json(null, { status: 404 });
+  }
 
-  const message = await MessageModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
-    .populate('cover')
-    .lean();
+  const message = await MessageModel.findById(identifier).lean();
 
   if (!message) {
     return NextResponse.json(null, { status: 404 });
@@ -53,23 +49,52 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
     }
 
-    const previousCover = message.cover?.toString();
+    const { private: privateValue, published_at, publishedAt, response, status: _status, ...rest } = parsed.data;
 
-    Object.assign(message, parsed.data, { updated_by: authResult.session.user!.id });
-    await message.save();
+    Object.assign(message, rest, { updated_by: authResult.session.user!.id });
 
-    if (parsed.data.cover && parsed.data.cover !== previousCover) {
-      await attachFile({ fileId: parsed.data.cover, refId: message._id, kind: 'Message', field: 'cover' });
-      await detachFile(previousCover, message._id);
-      await deleteFileIfOrphan(previousCover);
-    } else if (!parsed.data.cover && previousCover) {
-      await detachFile(previousCover, message._id);
-      await deleteFileIfOrphan(previousCover);
-      message.cover = undefined;
-      await message.save();
+    if (response !== undefined) {
+      message.response = response ?? undefined;
     }
 
-    const updated = await MessageModel.findById(message._id).populate('cover').lean();
+    const hasPublishedUpdate = Object.prototype.hasOwnProperty.call(parsed.data, 'published_at') ||
+      Object.prototype.hasOwnProperty.call(parsed.data, 'publishedAt');
+
+    if (hasPublishedUpdate) {
+      const nextPublishedAt = published_at ?? publishedAt ?? null;
+      if (nextPublishedAt) {
+        message.published_at = nextPublishedAt;
+        message.publishedAt = nextPublishedAt;
+        message.private = false;
+        message.status = 'published';
+      } else {
+        message.published_at = null;
+        message.publishedAt = null;
+        message.private = true;
+        message.status = 'draft';
+      }
+    }
+
+    if (privateValue !== undefined) {
+      if (privateValue) {
+        message.private = true;
+        message.published_at = null;
+        message.publishedAt = null;
+        message.status = 'draft';
+      } else {
+        message.private = false;
+        if (!message.published_at) {
+          const nextPublishedAt = new Date();
+          message.published_at = nextPublishedAt;
+          message.publishedAt = nextPublishedAt;
+        }
+        message.status = 'published';
+      }
+    }
+
+    await message.save();
+
+    const updated = await MessageModel.findById(message._id).lean();
     return NextResponse.json(formatMessage(updated));
   } catch (error) {
     console.error('Message update error', error);
@@ -91,13 +116,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
   }
 
-  const coverId = message.cover?.toString();
   await message.deleteOne();
-
-  if (coverId) {
-    await detachFile(coverId, message._id);
-    await deleteFileIfOrphan(coverId);
-  }
 
   return NextResponse.json({ message: 'Mensagem removida' });
 }

@@ -3,12 +3,10 @@ import { connectMongo } from '@/lib/mongodb';
 import MessageModel from '@/lib/models/Message';
 import { messageSchema } from '@/lib/validations/message';
 import { requireAdmin } from '@/lib/api';
-import { attachFile } from '@/lib/upload';
 import {
   buildPaginatedResponse,
   buildRegexFilter,
   normalizeDocument,
-  normalizeUploadFile,
   parseLegacyPagination,
   resolveStatusFilter,
   withPublishedFlag
@@ -16,12 +14,8 @@ import {
 
 function formatMessage(doc: Record<string, unknown> | null) {
   if (!doc) return null;
-  const { cover, ...rest } = doc as typeof doc & { cover?: unknown };
-  const normalizedRest = (normalizeDocument(rest) ?? {}) as Record<string, unknown>;
-  return {
-    ...withPublishedFlag(normalizedRest),
-    cover: normalizeUploadFile(cover)
-  };
+  const normalized = (normalizeDocument(doc) ?? {}) as Record<string, unknown>;
+  return withPublishedFlag(normalized);
 }
 
 const SORT_FIELDS = new Map([
@@ -29,7 +23,9 @@ const SORT_FIELDS = new Map([
   ['created_at', 'createdAt'],
   ['updatedAt', 'updatedAt'],
   ['updated_at', 'updatedAt'],
-  ['title', 'title']
+  ['name', 'name'],
+  ['title', 'name'],
+  ['content', 'message']
 ]);
 
 function buildSort(sortParam?: string | null, directionParam?: string | null) {
@@ -61,12 +57,12 @@ export async function GET(request: Request) {
     const regex = buildRegexFilter(search);
     filters.push({
       $or: [
-        { title: regex },
-        { excerpt: regex },
-        { content: regex },
         { name: regex },
         { email: regex },
-        { city: regex }
+        { city: regex },
+        { state: regex },
+        { message: regex },
+        { response: regex }
       ]
     });
   }
@@ -78,7 +74,7 @@ export async function GET(request: Request) {
   const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
 
   await connectMongo();
-  const query = MessageModel.find(filter).sort(sort).populate('cover').lean();
+  const query = MessageModel.find(filter).sort(sort).lean();
 
   if (typeof start === 'number' && start > 0) {
     query.skip(start);
@@ -119,11 +115,7 @@ export async function POST(request: Request) {
       updated_by: authResult.session.user!.id
     });
 
-    if (parsed.data.cover) {
-      await attachFile({ fileId: parsed.data.cover, refId: message._id, kind: 'Message', field: 'cover' });
-    }
-
-    const created = await MessageModel.findById(message._id).populate('cover').lean();
+    const created = await MessageModel.findById(message._id).lean();
     return NextResponse.json(formatMessage(created), { status: 201 });
   } catch (error) {
     console.error('Message create error', error);
