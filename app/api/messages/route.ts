@@ -12,7 +12,9 @@ function formatMessage(doc: Record<string, unknown> | null) {
   const withDefaults = {
     ...normalized,
     response: typeof normalized.response === 'string' ? normalized.response : '',
-    publicada: Boolean(normalized.publicada)
+    published: typeof normalized.published === 'boolean'
+      ? normalized.published
+      : normalized.status === 'published'
   } as Record<string, unknown>;
   return withPublishedFlag(withDefaults);
 }
@@ -50,14 +52,14 @@ export async function GET(request: Request) {
 
   const statusParam = searchParams.get('status');
   if (statusParam === 'published') {
-    filters.push({ publicada: true });
+    filters.push({ published: true });
   } else if (statusParam === 'draft') {
-    filters.push({ publicada: false });
+    filters.push({ published: false });
   }
 
-  const publicadaParam = searchParams.get('publicada');
-  if (publicadaParam != null) {
-    filters.push({ publicada: publicadaParam === 'true' || publicadaParam === '1' });
+  const publishedParam = searchParams.get('published') ?? searchParams.get('publicada');
+  if (publishedParam != null) {
+    filters.push({ published: publishedParam === 'true' || publishedParam === '1' });
   }
 
   if (search) {
@@ -78,8 +80,8 @@ export async function GET(request: Request) {
     filters.push({ city: { $regex: city, $options: 'i' } });
   }
 
-  if (!filters.some((entry) => Object.prototype.hasOwnProperty.call(entry, 'publicada')) && !shouldPaginate) {
-    filters.push({ publicada: true });
+  if (!filters.some((entry) => Object.prototype.hasOwnProperty.call(entry, 'published')) && !shouldPaginate) {
+    filters.push({ published: true });
   }
 
   const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
@@ -127,9 +129,8 @@ export async function POST(request: Request) {
       state: parsed.data.state.trim(),
       message: parsed.data.message.trim(),
       response: parsed.data.response?.trim() ?? '',
-      publicada: parsed.data.publicada ?? false,
-      created_by: authResult.session.user!.id,
-      updated_by: authResult.session.user!.id
+      published: parsed.data.published ?? false,
+      created_by: authResult.session.user!.id
     } as const;
 
     const message = await MessageModel.create(payload);

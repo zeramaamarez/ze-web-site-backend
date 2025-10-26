@@ -12,7 +12,9 @@ function formatMessage(doc: Record<string, unknown> | null) {
   const withDefaults = {
     ...normalized,
     response: typeof normalized.response === 'string' ? normalized.response : '',
-    publicada: Boolean(normalized.publicada)
+    published: typeof normalized.published === 'boolean'
+      ? normalized.published
+      : normalized.status === 'published'
   } as Record<string, unknown>;
   return withPublishedFlag(withDefaults);
 }
@@ -57,7 +59,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if ('response' in parsed.data) {
       message.response = parsed.data.response?.trim() ?? '';
     }
-    message.updated_by = authResult.session.user!.id;
 
     await message.save();
 

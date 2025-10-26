@@ -44,7 +44,7 @@ export default function NewMessagePage() {
       state: values.state.trim(),
       message: values.message.trim(),
       response: values.response?.trim() ?? '',
-      publicada: false
+      published: false
     } as const;
 
     try {

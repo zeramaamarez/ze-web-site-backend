@@ -7,7 +7,7 @@ export const messageSchema = z.object({
   state: z.string().min(1, 'Estado é obrigatório'),
   message: z.string().min(1, 'Mensagem é obrigatória'),
   response: z.string().optional().nullable(),
-  publicada: z.boolean().optional()
+  published: z.boolean().optional()
 });
 
 export type MessageInput = z.infer<typeof messageSchema>;

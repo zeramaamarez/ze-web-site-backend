@@ -11,7 +11,9 @@ function formatMessage(doc: Record<string, unknown> | null) {
   const withDefaults = {
     ...normalized,
     response: typeof normalized.response === 'string' ? normalized.response : '',
-    publicada: Boolean(normalized.publicada)
+    published: typeof normalized.published === 'boolean'
+      ? normalized.published
+      : normalized.status === 'published'
   } as Record<string, unknown>;
   return withPublishedFlag(withDefaults);
 }
@@ -30,9 +32,8 @@ export async function PATCH(_: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
   }
 
-  if (message.publicada) {
-    message.publicada = false;
-    message.updated_by = authResult.session.user!.id;
+  if (message.published) {
+    message.published = false;
     await message.save();
   }
 

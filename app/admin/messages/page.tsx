@@ -21,7 +21,6 @@ interface MessageItem {
   city?: string;
   message?: string;
   response?: string;
-  publicada?: boolean;
   published?: boolean;
   createdAt?: string;
 }
@@ -37,7 +36,7 @@ const columnOptions: ColumnOption[] = [
   { key: 'city', label: 'Cidade', defaultVisible: false },
   { key: 'message', label: 'Mensagem', defaultVisible: true },
   { key: 'response', label: 'Resposta', defaultVisible: false },
-  { key: 'publicada', label: 'Status', defaultVisible: true },
+  { key: 'published', label: 'Status', defaultVisible: true },
   { key: 'createdAt', label: 'Data de criação', defaultVisible: true },
   { key: 'actions', label: 'Ações', alwaysVisible: true }
 ];
@@ -107,11 +106,7 @@ export default function MessagesPage() {
 
       const payload = (await response.json()) as MessagesResponse | MessageItem[];
       const { items, pagination } = resolveListResponse(payload, pageSize, page);
-      const normalizedItems = items.map((item) => ({
-        ...item,
-        publicada: typeof item.publicada === 'boolean' ? item.publicada : Boolean(item.published)
-      }));
-      setMessages(normalizedItems);
+      setMessages(items.map((item) => ({ ...item, published: Boolean(item.published) })));
       setPage(pagination.page);
       setTotalPages(pagination.totalPages);
       setTotalItems(pagination.total);
@@ -209,14 +204,14 @@ export default function MessagesPage() {
         render: (item) => truncate(item.response, 60)
       },
       {
-        key: 'publicada',
+        key: 'published',
         label: 'Status',
         header: 'Status',
         align: 'center',
         defaultVisible: true,
         render: (item) => (
-          <Badge className={item.publicada ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
-            {item.publicada ? 'Publicada' : 'Aguardando moderação'}
+          <Badge className={item.published ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
+            {item.published ? 'Publicada' : 'Aguardando moderação'}
           </Badge>
         )
       },
@@ -270,8 +265,8 @@ export default function MessagesPage() {
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             {item.city && <span className="rounded-full bg-muted px-2 py-1">{item.city}</span>}
             <span className="rounded-full bg-muted px-2 py-1">{formatDate(item.createdAt)}</span>
-            <Badge className={item.publicada ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
-              {item.publicada ? 'Publicada' : 'Aguardando moderação'}
+            <Badge className={item.published ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
+              {item.published ? 'Publicada' : 'Aguardando moderação'}
             </Badge>
           </div>
           {item.response && (

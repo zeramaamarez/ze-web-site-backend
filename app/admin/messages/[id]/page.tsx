@@ -26,7 +26,7 @@ type MessageDetails = {
   state?: string | null;
   message: string;
   response?: string | null;
-  publicada?: boolean;
+  published?: boolean;
   createdAt?: string;
 };
 
@@ -114,7 +114,7 @@ export default function EditMessagePage() {
   };
 
   const handlePublish = async () => {
-    if (!message || message.publicada) return;
+    if (!message || message.published) return;
     setIsPublishing(true);
     try {
       const response = await fetch(`/api/messages/${message._id}/publish`, { method: 'PATCH' });
@@ -135,7 +135,7 @@ export default function EditMessagePage() {
   };
 
   const handleUnpublish = async () => {
-    if (!message || !message.publicada) return;
+    if (!message || !message.published) return;
     setIsUnpublishing(true);
     try {
       const response = await fetch(`/api/messages/${message._id}/unpublish`, { method: 'PATCH' });
@@ -184,7 +184,7 @@ export default function EditMessagePage() {
     return null;
   }
 
-  const statusBadge = message.publicada
+  const statusBadge = message.published
     ? { label: 'Publicada', className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' }
     : { label: 'Aguardando moderação', className: 'bg-amber-100 text-amber-700 hover:bg-amber-100' };
 
@@ -196,12 +196,12 @@ export default function EditMessagePage() {
           <p className="text-sm text-muted-foreground">Revise e modere as mensagens enviadas pelos fãs.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {!message.publicada && (
+          {!message.published && (
             <Button type="button" onClick={handlePublish} disabled={isPublishing}>
               {isPublishing ? 'Publicando...' : 'Publicar'}
             </Button>
           )}
-          {message.publicada && (
+          {message.published && (
             <Button type="button" variant="outline" onClick={handleUnpublish} disabled={isUnpublishing}>
               {isUnpublishing ? 'Despublicando...' : 'Despublicar'}
             </Button>
