@@ -26,17 +26,24 @@ export async function PATCH(_: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
   }
 
-  await connectMongo();
-  const message = await MessageModel.findById(params.id);
-  if (!message) {
-    return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
-  }
+  try {
+    await connectMongo();
+    const updated = await MessageModel.findByIdAndUpdate(
+      params.id,
+      {
+        $set: { published: true },
+        $unset: { status: 1, published_at: 1, publishedAt: 1 }
+      },
+      { new: true, lean: true }
+    );
 
-  if (!message.published) {
-    message.published = true;
-    await message.save();
-  }
+    if (!updated) {
+      return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 });
+    }
 
-  const updated = await MessageModel.findById(message._id).lean();
-  return NextResponse.json(formatMessage(updated));
+    return NextResponse.json(formatMessage(updated));
+  } catch (error) {
+    console.error('Message publish error', error);
+    return NextResponse.json({ error: 'Erro inesperado' }, { status: 500 });
+  }
 }
