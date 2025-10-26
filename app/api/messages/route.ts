@@ -4,7 +4,15 @@ import MessageModel from '@/lib/models/Message';
 import { messageSchema } from '@/lib/validations/message';
 import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
-import { normalizeDocument, normalizeUploadFile, parseLegacyPagination, withPublishedFlag } from '@/lib/legacy';
+import {
+  buildPaginatedResponse,
+  buildRegexFilter,
+  normalizeDocument,
+  normalizeUploadFile,
+  parseLegacyPagination,
+  resolveStatusFilter,
+  withPublishedFlag
+} from '@/lib/legacy';
 
 function formatMessage(doc: Record<string, unknown> | null) {
   if (!doc) return null;
@@ -16,45 +24,58 @@ function formatMessage(doc: Record<string, unknown> | null) {
   };
 }
 
-const SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
+const SORT_FIELDS = new Map([
+  ['createdAt', 'createdAt'],
+  ['created_at', 'createdAt'],
+  ['updatedAt', 'updatedAt'],
+  ['updated_at', 'updatedAt'],
+  ['title', 'title']
+]);
 
 function buildSort(sortParam?: string | null, directionParam?: string | null) {
-  const sortField = sortParam?.replace(/^-/, '') || 'createdAt';
+  const resolvedParam = sortParam?.replace(/^-/, '') || 'createdAt';
+  const sortField = SORT_FIELDS.get(resolvedParam) ?? 'createdAt';
   let direction = sortParam?.startsWith('-') || !sortParam ? -1 : 1;
   if (directionParam) {
     direction = directionParam === 'asc' ? 1 : -1;
-  }
-  if (!SORT_FIELDS.has(sortField)) {
-    return { createdAt: -1 } as const;
   }
   return { [sortField]: direction } as Record<string, 1 | -1>;
 }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const [sortField, sortDirection] = (searchParams.get('_sort') || searchParams.get('sort') || '').split(':');
+  const [sortFieldParam, sortDirectionFromSortParam] = (searchParams.get('_sort') || searchParams.get('sort') || '').split(':');
+  const explicitOrder = searchParams.get('_order') || searchParams.get('order');
+  const sort = buildSort(sortFieldParam || undefined, sortDirectionFromSortParam || explicitOrder || null);
   const search = searchParams.get('search');
-  const publishedParam = searchParams.get('published');
-  const sort = buildSort(sortField || undefined, sortDirection || null);
-  const { start, limit } = parseLegacyPagination(searchParams);
+  const city = searchParams.get('city');
+  const { start, limit, shouldPaginate, page } = parseLegacyPagination(searchParams);
 
-  const andFilters: Record<string, unknown>[] = [];
-  andFilters.push({ published_at: { $ne: null } });
+  const filters: Record<string, unknown>[] = [];
+  const statusFilter = resolveStatusFilter(searchParams, { defaultStatus: shouldPaginate ? 'all' : undefined });
+  if (statusFilter) {
+    filters.push(statusFilter);
+  }
+
   if (search) {
-    andFilters.push({
+    const regex = buildRegexFilter(search);
+    filters.push({
       $or: [
-        { title: { $regex: search, $options: 'i' } },
-        { excerpt: { $regex: search, $options: 'i' } },
-        { content: { $regex: search, $options: 'i' } }
+        { title: regex },
+        { excerpt: regex },
+        { content: regex },
+        { name: regex },
+        { email: regex },
+        { city: regex }
       ]
     });
   }
 
-  if (publishedParam === 'false') {
-    andFilters.push({ published_at: null });
+  if (city) {
+    filters.push({ city: { $regex: city, $options: 'i' } });
   }
 
-  const filter: Record<string, unknown> = andFilters.length ? { $and: andFilters } : {};
+  const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
 
   await connectMongo();
   const query = MessageModel.find(filter).sort(sort).populate('cover').lean();
@@ -67,8 +88,15 @@ export async function GET(request: Request) {
     query.limit(limit);
   }
 
-  const messages = await query;
+  const [messages, total] = await Promise.all([
+    query,
+    shouldPaginate ? MessageModel.countDocuments(filter) : Promise.resolve(undefined)
+  ]);
   const formatted = messages.map((message) => formatMessage(message));
+
+  if (shouldPaginate) {
+    return NextResponse.json(buildPaginatedResponse(formatted, { total, limit: limit ?? undefined, start, page }));
+  }
 
   return NextResponse.json(formatted);
 }
