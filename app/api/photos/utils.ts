@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import UploadFileModel from '@/lib/models/UploadFile';
-import { normalizeDocument, normalizeUploadFile, withPublishedFlag } from '@/lib/legacy';
+import { normalizeUploadFile, withPublishedFlag } from '@/lib/legacy';
 
 export type AnyRecord = Record<string, unknown>;
 
@@ -96,28 +96,30 @@ export async function buildUploadMap(ids: Iterable<string>) {
   const map = new Map<string, AnyRecord>();
 
   for (const upload of uploads) {
-    const normalized = normalizeUploadFile(upload);
+    const plain = JSON.parse(JSON.stringify(upload)) as AnyRecord;
+    const normalized = normalizeUploadFile(plain);
     if (!normalized || typeof normalized !== 'object') {
       continue;
     }
-    const record = normalizeDocument(normalized) as AnyRecord;
+    const record = normalized as AnyRecord;
     const id =
       resolveObjectIdString(record.id) ??
       resolveObjectIdString(record._id) ??
+      resolveObjectIdString(plain._id) ??
       resolveObjectIdString(upload._id);
     if (!id) {
       continue;
     }
     record.id = id;
     record._id = id;
-    map.set(id, record);
+    map.set(id, JSON.parse(JSON.stringify(record)) as AnyRecord);
   }
 
   return map;
 }
 
 function cloneUploadRecord(record: AnyRecord) {
-  return normalizeDocument(record) as AnyRecord;
+  return JSON.parse(JSON.stringify(record)) as AnyRecord;
 }
 
 function createUploadRecord(entry: unknown, uploadMap?: Map<string, AnyRecord>) {
@@ -170,12 +172,12 @@ export function formatPhoto(
     ? [rawUrlValue]
     : [];
 
-  const normalized = normalizeDocument(doc);
-  if (!normalized || typeof normalized !== 'object') {
-    return null;
-  }
-
-  const record = normalized as AnyRecord & { url?: unknown; image?: unknown; id?: unknown; _id?: unknown };
+  const record = JSON.parse(JSON.stringify(doc)) as AnyRecord & {
+    url?: unknown;
+    image?: unknown;
+    id?: unknown;
+    _id?: unknown;
+  };
 
   const hydratedUrls = rawUrlEntries
     .map((entry) => createUploadRecord(entry, uploadMap))
