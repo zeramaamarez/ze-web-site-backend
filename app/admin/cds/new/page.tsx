@@ -14,12 +14,14 @@ import { ImageUpload, type UploadedImage } from '@/components/admin/image-upload
 import { AudioUpload, type UploadedAudio } from '@/components/admin/audio-upload';
 import { toast } from 'sonner';
 
+const trackFormSchema = cdTrackSchema.omit({ _id: true });
+
 const formSchema = cdSchema.extend({
   published: z.boolean().optional(),
-  tracks: z.array(cdTrackSchema.omit({ _id: true })).optional()
+  tracks: z.array(trackFormSchema).optional()
 });
 
-type TrackForm = z.infer<typeof cdTrackSchema.omit({ _id: true })> & {
+type TrackForm = z.infer<typeof trackFormSchema> & {
   audioFile?: UploadedAudio | null;
 };
 type FormValues = z.infer<typeof formSchema>;
