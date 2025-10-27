@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "create-super-admin": "node scripts/create-super-admin.mjs"
+    "create-super-admin": "node scripts/create-super-admin.mjs",
+    "cleanup:cloudinary": "tsx scripts/cleanup-cloudinary.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
