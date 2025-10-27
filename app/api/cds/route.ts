@@ -265,13 +265,14 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const sortParam = searchParams.get('_sort') || searchParams.get('sort');
   const [sortField, sortDirection] = sortParam?.split(':') ?? [];
-  const sort = buildSort(sortField || undefined, sortDirection || searchParams.get('order'));
+  let sort = buildSort(sortField || undefined, sortDirection || searchParams.get('order'));
   const search = searchParams.get('search');
   const company = searchParams.get('company');
   const year = searchParams.get('year');
   const { start, limit, shouldPaginate, page } = parseLegacyPagination(searchParams);
 
   const filters: Record<string, unknown>[] = [];
+  filters.push({ deleted: { $ne: true } });
   const statusFilter = resolveStatusFilter(searchParams, { defaultStatus: shouldPaginate ? 'all' : undefined });
   if (statusFilter) {
     filters.push(statusFilter);
@@ -294,6 +295,10 @@ export async function GET(request: Request) {
 
   if (year) {
     filters.push({ release_date: buildRegexFilter(year, { startsWith: true }) });
+  }
+
+  if (!shouldPaginate && !sortParam) {
+    sort = { release_date: -1, createdAt: -1 };
   }
 
   const filter: Record<string, unknown> = filters.length ? { $and: filters } : {};
@@ -355,15 +360,22 @@ export async function POST(request: Request) {
 
     await connectMongo();
 
+    const { tracks = [], status: _status, ...cdData } = parsed.data;
+    const publishedAtInput = cdData.publishedAt ?? cdData.published_at ?? null;
+    const normalizedPublishedAt = publishedAtInput ? new Date(publishedAtInput) : null;
+
     const cd = await CdModel.create({
-      ...parsed.data,
+      ...cdData,
+      status: normalizedPublishedAt ? 'published' : 'draft',
+      publishedAt: normalizedPublishedAt,
+      published_at: normalizedPublishedAt,
       created_by: authResult.session.user!.id,
       updated_by: authResult.session.user!.id
     });
 
-    if (parsed.data.tracks?.length) {
+    if (tracks.length) {
       const trackIds: string[] = [];
-      for (const track of parsed.data.tracks) {
+      for (const track of tracks) {
         const trackDoc = await CdTrackModel.create({
           name: track.name,
           composers: track.composers,
@@ -380,8 +392,8 @@ export async function POST(request: Request) {
       await cd.save();
     }
 
-    if (parsed.data.cover) {
-      await attachFile({ fileId: parsed.data.cover, refId: cd._id, kind: 'Cd', field: 'cover' });
+    if (cdData.cover) {
+      await attachFile({ fileId: cdData.cover, refId: cd._id, kind: 'Cd', field: 'cover' });
     }
 
     return NextResponse.json(await formatCdForResponse(await serializeCd(cd._id.toString())), { status: 201 });

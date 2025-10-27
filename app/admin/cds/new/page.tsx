@@ -224,6 +224,8 @@ export default function NewCdPage() {
       };
     });
 
+    const publishedAt = published ? new Date().toISOString() : null;
+
     const payload = {
       title: rest.title.trim(),
       company: rest.company?.trim() ? rest.company.trim() : undefined,
@@ -231,7 +233,9 @@ export default function NewCdPage() {
       info: rest.info?.trim() ? rest.info.trim() : undefined,
       cover: cover[0]?._id,
       tracks: trackPayload,
-      published_at: published ? new Date().toISOString() : null
+      published_at: publishedAt,
+      publishedAt,
+      status: published ? 'published' : 'draft'
     };
 
     const response = await fetch('/api/cds', {

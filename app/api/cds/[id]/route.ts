@@ -193,13 +193,30 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     const previousCover = cd.cover?.toString();
+    const { tracks, ...restData } = parsed.data;
+    const updateData = { ...restData } as typeof restData & { status?: 'draft' | 'published' };
+    const hasPublishedAtField =
+      Object.prototype.hasOwnProperty.call(body, 'published_at') ||
+      Object.prototype.hasOwnProperty.call(body, 'publishedAt');
+    if (hasPublishedAtField) {
+      const publishedAtValue = updateData.publishedAt ?? updateData.published_at ?? null;
+      if (publishedAtValue) {
+        updateData.status = 'published';
+        updateData.publishedAt = publishedAtValue;
+        updateData.published_at = publishedAtValue;
+      } else {
+        updateData.status = 'draft';
+        updateData.publishedAt = null;
+        updateData.published_at = null;
+      }
+    }
 
-    Object.assign(cd, parsed.data, { updated_by: authResult.session.user!.id });
+    Object.assign(cd, updateData, { updated_by: authResult.session.user!.id });
 
-    if (parsed.data.tracks) {
+    if (tracks) {
       const keepTrackIds: string[] = [];
 
-      for (const track of parsed.data.tracks) {
+      for (const track of tracks) {
         if (track._id && isObjectId(track._id)) {
           const existingTrack = await CdTrackModel.findById(track._id);
           if (existingTrack) {
@@ -270,15 +287,15 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     await cd.save();
 
-    if (parsed.data.cover && parsed.data.cover !== previousCover) {
-      await attachFile({ fileId: parsed.data.cover, refId: cd._id, kind: 'Cd', field: 'cover' });
+    if (updateData.cover && updateData.cover !== previousCover) {
+      await attachFile({ fileId: updateData.cover, refId: cd._id, kind: 'Cd', field: 'cover' });
       await detachFile(previousCover, cd._id);
       await deleteFileIfOrphan(previousCover, {
         reason: 'cover_replaced',
         relatedTo: `CD:${cd._id.toString()}`,
         userId: authResult.session.user!.id
       });
-    } else if (!parsed.data.cover && previousCover) {
+    } else if (!updateData.cover && previousCover) {
       await detachFile(previousCover, cd._id);
       await deleteFileIfOrphan(previousCover, {
         reason: 'cover_replaced',
