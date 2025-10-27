@@ -213,7 +213,7 @@ export default function EditCdPage() {
 
         const trackList = Array.isArray(data.track) ? mapTracksFromResponse(data.track) : [];
         setTracks(trackList);
-        setExpandedTrackIds(trackList.length ? [trackList[0].id] : []);
+        setExpandedTrackIds([]);
         setTrackErrors({});
       } catch (error) {
         toast.error('Não foi possível carregar o CD');
