@@ -1,7 +1,7 @@
 'use client';
 
 import type { DragEvent } from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -73,12 +73,6 @@ export default function NewCdPage() {
   const [coverError, setCoverError] = useState<string | null>(null);
   const [expandedTrackIds, setExpandedTrackIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (tracks.length && expandedTrackIds.length === 0) {
-      setExpandedTrackIds([tracks[0].id]);
-    }
-  }, [tracks, expandedTrackIds.length]);
-
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -93,7 +87,6 @@ export default function NewCdPage() {
   const addTrack = () => {
     const newTrack = createEmptyTrack();
     setTracks((prev) => [...prev, newTrack]);
-    setExpandedTrackIds([newTrack.id]);
   };
 
   const updateTrack = <K extends keyof Omit<TrackForm, 'id'>>(trackId: string, key: K, value: TrackForm[K]) => {
@@ -116,29 +109,8 @@ export default function NewCdPage() {
   const removeTrack = (trackId: string) => {
     const confirmed = window.confirm('Deseja remover esta faixa?');
     if (!confirmed) return;
-    setTracks((prev) => {
-      const index = prev.findIndex((track) => track.id === trackId);
-      const updated = prev.filter((track) => track.id !== trackId);
-      setExpandedTrackIds((prevExpanded) => {
-        if (!prevExpanded.includes(trackId)) {
-          return prevExpanded;
-        }
-        if (!updated.length) {
-          return [];
-        }
-        const withoutRemoved = prevExpanded.filter((id) => id !== trackId);
-        const fallbackIndex = Math.min(Math.max(index, 0), updated.length - 1);
-        const fallbackId = updated[fallbackIndex]?.id;
-        if (!fallbackId) {
-          return withoutRemoved;
-        }
-        if (withoutRemoved.includes(fallbackId)) {
-          return withoutRemoved;
-        }
-        return [...withoutRemoved, fallbackId];
-      });
-      return updated;
-    });
+    setTracks((prev) => prev.filter((track) => track.id !== trackId));
+    setExpandedTrackIds((prevExpanded) => prevExpanded.filter((id) => id !== trackId));
     setTrackErrors((prev) => {
       if (!(trackId in prev)) return prev;
       const next = { ...prev };

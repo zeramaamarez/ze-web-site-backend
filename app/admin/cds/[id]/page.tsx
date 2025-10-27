@@ -232,16 +232,9 @@ export default function EditCdPage() {
     };
   }, [form, params.id, router]);
 
-  useEffect(() => {
-    if (tracks.length && expandedTrackIds.length === 0) {
-      setExpandedTrackIds([tracks[0].id]);
-    }
-  }, [tracks, expandedTrackIds.length]);
-
   const addTrack = () => {
     const newTrack = createEmptyTrack();
     setTracks((prev) => [...prev, newTrack]);
-    setExpandedTrackIds([newTrack.id]);
   };
 
   const updateTrack = <K extends keyof Omit<TrackForm, 'id' | 'persistedId'>>(trackId: string, key: K, value: TrackForm[K]) => {
@@ -267,29 +260,8 @@ export default function EditCdPage() {
     const confirmed = window.confirm('Deseja remover esta faixa?');
     if (!confirmed) return;
 
-    setTracks((prev) => {
-      const index = prev.findIndex((track) => track.id === trackId);
-      const updated = prev.filter((track) => track.id !== trackId);
-      setExpandedTrackIds((prevExpanded) => {
-        if (!prevExpanded.includes(trackId)) {
-          return prevExpanded;
-        }
-        if (!updated.length) {
-          return [];
-        }
-        const withoutRemoved = prevExpanded.filter((id) => id !== trackId);
-        const fallbackIndex = Math.min(Math.max(index, 0), updated.length - 1);
-        const fallbackId = updated[fallbackIndex]?.id;
-        if (!fallbackId) {
-          return withoutRemoved;
-        }
-        if (withoutRemoved.includes(fallbackId)) {
-          return withoutRemoved;
-        }
-        return [...withoutRemoved, fallbackId];
-      });
-      return updated;
-    });
+    setTracks((prev) => prev.filter((track) => track.id !== trackId));
+    setExpandedTrackIds((prevExpanded) => prevExpanded.filter((id) => id !== trackId));
 
     setTrackErrors((prev) => {
       if (!(trackId in prev)) return prev;
