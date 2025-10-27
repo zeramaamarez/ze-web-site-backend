@@ -235,7 +235,7 @@ export default function NewCdPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="title">Título *</Label>
-              <Input id="title" placeholder="Ex: Paêbirú" {...form.register('title')} />
+              <Input id="title" placeholder="Ex: Nome do álbum" {...form.register('title')} />
               {form.formState.errors.title && (
                 <p className="text-sm text-destructive">{form.formState.errors.title.message}</p>
               )}
@@ -243,11 +243,11 @@ export default function NewCdPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="company">Gravadora</Label>
-                <Input id="company" placeholder="Ex: Rozenblit" {...form.register('company')} />
+                <Input id="company" placeholder="Ex: Nome da gravadora" {...form.register('company')} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="release_date">Ano de lançamento *</Label>
-                <Input id="release_date" placeholder="1975" maxLength={4} {...form.register('release_date')} />
+                <Input id="release_date" placeholder="Ex: 1975" maxLength={4} {...form.register('release_date')} />
                 {form.formState.errors.release_date ? (
                   <p className="text-sm text-destructive">{form.formState.errors.release_date.message}</p>
                 ) : (
@@ -257,7 +257,11 @@ export default function NewCdPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="info">Informações / Descrição</Label>
-              <RichTextEditor value={form.watch('info') || ''} onChange={(value) => form.setValue('info', value)} />
+              <RichTextEditor
+                value={form.watch('info') || ''}
+                onChange={(value) => form.setValue('info', value)}
+                placeholder="Adicione informações sobre o álbum, contexto histórico, curiosidades..."
+              />
             </div>
             <div className="flex items-center gap-2">
               <input id="published" type="checkbox" {...form.register('published')} />
@@ -331,7 +335,7 @@ export default function NewCdPage() {
                     <Label htmlFor={`track-title-${track.id}`}>Nome da música *</Label>
                     <Input
                       id={`track-title-${track.id}`}
-                      placeholder="Ex: Harpa dos Ares"
+                      placeholder="Ex: Nome da faixa"
                       value={track.title}
                       onChange={(event) => updateTrack(track.id, 'title', event.target.value)}
                     />
@@ -341,7 +345,7 @@ export default function NewCdPage() {
                     <Label htmlFor={`track-artist-${track.id}`}>Artista</Label>
                     <Input
                       id={`track-artist-${track.id}`}
-                      placeholder="Ex: Zé Ramalho"
+                      placeholder="Ex: Nome do artista"
                       value={track.artist}
                       onChange={(event) => updateTrack(track.id, 'artist', event.target.value)}
                     />
@@ -350,7 +354,7 @@ export default function NewCdPage() {
                     <Label htmlFor={`track-composers-${track.id}`}>Compositores</Label>
                     <Input
                       id={`track-composers-${track.id}`}
-                      placeholder="Ex: Lula Côrtes"
+                      placeholder="Ex: Nome dos compositores"
                       value={track.composers}
                       onChange={(event) => updateTrack(track.id, 'composers', event.target.value)}
                     />
