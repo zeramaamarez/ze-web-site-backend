@@ -22,9 +22,17 @@ export function AudioUpload({ value, onChange, folder }: AudioUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100MB
+
   const handleFile = async (file: File) => {
     setIsUploading(true);
     setError(null);
+
+    if (file.size > MAX_AUDIO_SIZE) {
+      setIsUploading(false);
+      setError('Arquivo muito grande. Tamanho máximo: 100MB');
+      return;
+    }
 
     const formData = new FormData();
     formData.append('file', file);
@@ -61,13 +69,13 @@ export function AudioUpload({ value, onChange, folder }: AudioUploadProps) {
           )}
         >
           <UploadCloud className="mb-2 h-6 w-6 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Clique para enviar áudio (MP3, WAV)</p>
+          <p className="text-sm text-muted-foreground">Clique para enviar áudio (MP3, WAV, FLAC) • Máx: 100MB</p>
           <Input
             type="file"
             className="hidden"
             onChange={(event) => event.target.files?.[0] && handleFile(event.target.files[0])}
             disabled={isUploading}
-            accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg"
+            accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/flac,audio/x-flac"
           />
         </label>
       ) : (

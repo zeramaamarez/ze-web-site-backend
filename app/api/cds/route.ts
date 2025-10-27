@@ -94,15 +94,7 @@ function extractTrackId(entry: unknown): string | null {
   return null;
 }
 
-const TRACK_DATA_KEYS = new Set([
-  'name',
-  'publishing_company',
-  'composers',
-  'time',
-  'lyric',
-  'data_sheet',
-  'track'
-]);
+const TRACK_DATA_KEYS = new Set(['name', 'composers', 'time', 'lyric', 'track']);
 
 function entryNeedsHydration(entry: unknown): boolean {
   if (!entry) {
@@ -374,12 +366,10 @@ export async function POST(request: Request) {
       for (const track of parsed.data.tracks) {
         const trackDoc = await CdTrackModel.create({
           name: track.name,
-          publishing_company: track.publishing_company,
           composers: track.composers,
           time: track.time,
           track: track.track || undefined,
-          lyric: track.lyric,
-          data_sheet: track.data_sheet
+          lyric: track.lyric
         });
         if (track.track) {
           await attachFile({ fileId: track.track, refId: trackDoc._id, kind: 'CdTrack', field: 'track' });

@@ -204,11 +204,9 @@ export async function PUT(request: Request, { params }: { params: { id: string }
           if (existingTrack) {
             const previousAudio = existingTrack.track?.toString();
             existingTrack.name = track.name;
-            existingTrack.publishing_company = track.publishing_company;
             existingTrack.composers = track.composers;
             existingTrack.time = track.time;
             existingTrack.lyric = track.lyric;
-            existingTrack.data_sheet = track.data_sheet;
             existingTrack.track = track.track || undefined;
             await existingTrack.save();
             if (track.track && track.track !== previousAudio) {
@@ -224,12 +222,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         } else {
           const created = await CdTrackModel.create({
             name: track.name,
-            publishing_company: track.publishing_company,
             composers: track.composers,
             time: track.time,
             track: track.track || undefined,
-            lyric: track.lyric,
-            data_sheet: track.data_sheet
+            lyric: track.lyric
           });
           if (track.track) {
             await attachFile({ fileId: track.track, refId: created._id, kind: 'CdTrack', field: 'track' });

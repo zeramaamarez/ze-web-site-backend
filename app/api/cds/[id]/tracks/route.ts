@@ -29,12 +29,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
   const track = await CdTrackModel.create({
     name: parsed.data.name,
-    publishing_company: parsed.data.publishing_company,
     composers: parsed.data.composers,
     time: parsed.data.time,
     track: parsed.data.track || undefined,
-    lyric: parsed.data.lyric,
-    data_sheet: parsed.data.data_sheet
+    lyric: parsed.data.lyric
   });
   if (parsed.data.track) {
     await attachFile({ fileId: parsed.data.track, refId: track._id, kind: 'CdTrack', field: 'track' });
@@ -47,12 +45,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
     track: {
       _id: track._id.toString(),
       name: track.name,
-      publishing_company: track.publishing_company,
       composers: track.composers,
       time: track.time,
       track: track.track?.toString(),
-      lyric: track.lyric,
-      data_sheet: track.data_sheet
+      lyric: track.lyric
     }
   }, { status: 201 });
 }

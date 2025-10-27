@@ -3,12 +3,10 @@ import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 const CdTrackSchema = new Schema(
   {
     name: { type: String, required: true },
-    publishing_company: String,
     composers: String,
     time: String,
     track: { type: Types.ObjectId, ref: 'UploadFile' },
-    lyric: { type: Types.ObjectId, ref: 'Lyric' },
-    data_sheet: String
+    lyric: String
   },
   {
     timestamps: true,
@@ -16,7 +14,7 @@ const CdTrackSchema = new Schema(
   }
 );
 
-CdTrackSchema.index({ name: 'text', composers: 'text', publishing_company: 'text' });
+CdTrackSchema.index({ name: 'text', composers: 'text' });
 
 export type CdTrack = InferSchemaType<typeof CdTrackSchema>;
 

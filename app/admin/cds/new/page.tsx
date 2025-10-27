@@ -33,15 +33,20 @@ const formSchema = z.object({
 
 const trackFormSchema = z.object({
   title: z.string().min(1, 'Informe o nome da música'),
-  artist: z.string().optional(),
-  composers: z.string().optional()
+  composers: z.string().optional(),
+  time: z
+    .string()
+    .regex(/^$|^(\d{1,2}):(\d{2})$/u, 'Informe a duração no formato mm:ss')
+    .optional(),
+  lyric: z.string().optional()
 });
 
 type TrackForm = {
   id: string;
   title: string;
-  artist: string;
   composers: string;
+  time: string;
+  lyric: string;
   audioFile: UploadedAudio | null;
 };
 
@@ -52,8 +57,9 @@ function createEmptyTrack(): TrackForm {
   return {
     id,
     title: '',
-    artist: '',
     composers: '',
+    time: '',
+    lyric: '',
     audioFile: null
   };
 }
@@ -62,7 +68,7 @@ export default function NewCdPage() {
   const router = useRouter();
   const [cover, setCover] = useState<UploadedImage[]>([]);
   const [tracks, setTracks] = useState<TrackForm[]>([]);
-  const [trackErrors, setTrackErrors] = useState<Record<string, string>>({});
+  const [trackErrors, setTrackErrors] = useState<Record<string, { title?: string; time?: string }>>({});
   const [coverError, setCoverError] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
@@ -82,11 +88,16 @@ export default function NewCdPage() {
 
   const updateTrack = <K extends keyof Omit<TrackForm, 'id'>>(trackId: string, key: K, value: TrackForm[K]) => {
     setTracks((prev) => prev.map((track) => (track.id === trackId ? { ...track, [key]: value } : track)));
-    if (key === 'title') {
+    if (key === 'title' || key === 'time') {
       setTrackErrors((prev) => {
         if (!(trackId in prev)) return prev;
         const next = { ...prev };
-        delete next[trackId];
+        const { [key]: _removed, ...rest } = next[trackId];
+        if (Object.keys(rest).length === 0) {
+          delete next[trackId];
+        } else {
+          next[trackId] = rest;
+        }
         return next;
       });
     }
@@ -139,17 +150,27 @@ export default function NewCdPage() {
       return true;
     }
 
-    const errors: Record<string, string> = {};
+    const errors: Record<string, { title?: string; time?: string }> = {};
     for (const track of tracks) {
       const result = trackFormSchema.safeParse({
         title: track.title.trim(),
-        artist: track.artist.trim() ? track.artist.trim() : undefined,
-        composers: track.composers.trim() ? track.composers.trim() : undefined
+        composers: track.composers.trim() ? track.composers.trim() : undefined,
+        time: track.time.trim(),
+        lyric: track.lyric.trim()
       });
       if (!result.success) {
-        const message =
-          result.error.formErrors.fieldErrors.title?.[0] ?? 'Informe o nome da música';
-        errors[track.id] = message;
+        const fieldErrors = result.error.formErrors.fieldErrors;
+        const trackError: { title?: string; time?: string } = {};
+        if (fieldErrors.title?.[0]) {
+          trackError.title = fieldErrors.title[0];
+        }
+        if (fieldErrors.time?.[0]) {
+          trackError.time = fieldErrors.time[0];
+        }
+        if (!trackError.title && !trackError.time) {
+          trackError.title = 'Verifique os campos da faixa informada.';
+        }
+        errors[track.id] = trackError;
       }
     }
 
@@ -179,17 +200,16 @@ export default function NewCdPage() {
     const { published, ...rest } = values;
     const trackPayload = tracks.map((track, index) => {
       const title = track.title.trim();
-      const artist = track.artist.trim();
       const composers = track.composers.trim();
       const parts = [title];
-      if (artist) parts.push(artist);
       if (composers) parts.push(composers);
       const trackName = `${index + 1}-${parts.join('-')}`;
 
       return {
         name: trackName,
-        publishing_company: artist || undefined,
         composers: composers || undefined,
+        time: track.time.trim() || undefined,
+        lyric: track.lyric.trim() || undefined,
         track: track.audioFile?._id ?? undefined
       };
     });
@@ -339,16 +359,9 @@ export default function NewCdPage() {
                       value={track.title}
                       onChange={(event) => updateTrack(track.id, 'title', event.target.value)}
                     />
-                    {trackErrors[track.id] && <p className="text-sm text-destructive">{trackErrors[track.id]}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={`track-artist-${track.id}`}>Artista</Label>
-                    <Input
-                      id={`track-artist-${track.id}`}
-                      placeholder="Ex: Nome do artista"
-                      value={track.artist}
-                      onChange={(event) => updateTrack(track.id, 'artist', event.target.value)}
-                    />
+                    {trackErrors[track.id]?.title && (
+                      <p className="text-sm text-destructive">{trackErrors[track.id]?.title}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor={`track-composers-${track.id}`}>Compositores</Label>
@@ -359,6 +372,28 @@ export default function NewCdPage() {
                       onChange={(event) => updateTrack(track.id, 'composers', event.target.value)}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`track-time-${track.id}`}>Duração</Label>
+                    <Input
+                      id={`track-time-${track.id}`}
+                      placeholder="Ex: 03:45"
+                      value={track.time}
+                      onChange={(event) => updateTrack(track.id, 'time', event.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">Informe a duração no formato mm:ss.</p>
+                    {trackErrors[track.id]?.time && (
+                      <p className="text-sm text-destructive">{trackErrors[track.id]?.time}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor={`track-lyric-${track.id}`}>Letra / Lyric</Label>
+                    <RichTextEditor
+                      value={track.lyric}
+                      onChange={(value) => updateTrack(track.id, 'lyric', value)}
+                      placeholder="Adicione a letra completa da faixa, se disponível."
+                      rows={6}
+                    />
+                  </div>
                   <div className="space-y-2 md:col-span-2">
                     <Label>Áudio da faixa</Label>
                     <AudioUpload
@@ -366,7 +401,7 @@ export default function NewCdPage() {
                       onChange={(audio) => updateTrack(track.id, 'audioFile', audio ?? null)}
                       folder="tracks"
                     />
-                    <p className="text-xs text-muted-foreground">MP3, WAV, FLAC</p>
+                    <p className="text-xs text-muted-foreground">MP3, WAV, FLAC | Máx: 100MB</p>
                   </div>
                 </div>
               </div>

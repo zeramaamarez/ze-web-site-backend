@@ -8,6 +8,7 @@ import UploadFileModel from '@/lib/models/UploadFile';
 import { requireAdmin } from '@/lib/api';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_AUDIO_FILE_SIZE = 100 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   'image/png',
   'image/jpeg',
@@ -15,7 +16,9 @@ const ALLOWED_TYPES = new Set([
   'audio/mpeg',
   'audio/mp3',
   'audio/wav',
-  'audio/ogg'
+  'audio/ogg',
+  'audio/flac',
+  'audio/x-flac'
 ]);
 
 async function uploadToCloudinary(
@@ -177,8 +180,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Tipo de arquivo não suportado' }, { status: 400 });
   }
 
-  if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: 'Arquivo muito grande' }, { status: 400 });
+  const isAudio = file.type.startsWith('audio/');
+  const maxSize = isAudio ? MAX_AUDIO_FILE_SIZE : MAX_FILE_SIZE;
+
+  if (file.size > maxSize) {
+    const maxLabel = isAudio ? '100MB' : `${Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB`;
+    return NextResponse.json({ error: `Arquivo muito grande. Tamanho máximo: ${maxLabel}` }, { status: 400 });
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
