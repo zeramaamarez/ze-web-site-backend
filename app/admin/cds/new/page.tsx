@@ -14,7 +14,8 @@ import { RichTextEditor } from '@/components/admin/rich-text-editor';
 import { ImageUpload, type UploadedImage } from '@/components/admin/image-upload';
 import { AudioUpload, type UploadedAudio } from '@/components/admin/audio-upload';
 import { toast } from 'sonner';
-import { GripVertical, PlusCircle, Trash2 } from 'lucide-react';
+import { GripVertical, PlusCircle, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const DRAG_DATA_FORMAT = 'application/x-track-id';
 
@@ -70,6 +71,7 @@ export default function NewCdPage() {
   const [tracks, setTracks] = useState<TrackForm[]>([]);
   const [trackErrors, setTrackErrors] = useState<Record<string, { title?: string; time?: string }>>({});
   const [coverError, setCoverError] = useState<string | null>(null);
+  const [expandedTrackIds, setExpandedTrackIds] = useState<string[]>([]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -83,7 +85,9 @@ export default function NewCdPage() {
   });
 
   const addTrack = () => {
-    setTracks((prev) => [...prev, createEmptyTrack()]);
+    const newTrack = createEmptyTrack();
+    setTracks((prev) => [...prev, newTrack]);
+    setExpandedTrackIds([newTrack.id]);
   };
 
   const updateTrack = <K extends keyof Omit<TrackForm, 'id'>>(trackId: string, key: K, value: TrackForm[K]) => {
@@ -106,13 +110,41 @@ export default function NewCdPage() {
   const removeTrack = (trackId: string) => {
     const confirmed = window.confirm('Deseja remover esta faixa?');
     if (!confirmed) return;
-    setTracks((prev) => prev.filter((track) => track.id !== trackId));
+    setTracks((prev) => {
+      const index = prev.findIndex((track) => track.id === trackId);
+      const updated = prev.filter((track) => track.id !== trackId);
+      setExpandedTrackIds((prevExpanded) => {
+        if (!prevExpanded.includes(trackId)) {
+          return prevExpanded;
+        }
+        if (!updated.length) {
+          return [];
+        }
+        const withoutRemoved = prevExpanded.filter((id) => id !== trackId);
+        const fallbackIndex = Math.min(Math.max(index, 0), updated.length - 1);
+        const fallbackId = updated[fallbackIndex]?.id;
+        if (!fallbackId) {
+          return withoutRemoved;
+        }
+        if (withoutRemoved.includes(fallbackId)) {
+          return withoutRemoved;
+        }
+        return [...withoutRemoved, fallbackId];
+      });
+      return updated;
+    });
     setTrackErrors((prev) => {
       if (!(trackId in prev)) return prev;
       const next = { ...prev };
       delete next[trackId];
       return next;
     });
+  };
+
+  const toggleTrackExpansion = (trackId: string) => {
+    setExpandedTrackIds((prev) =>
+      prev.includes(trackId) ? prev.filter((id) => id !== trackId) : [...prev, trackId]
+    );
   };
 
   const handleDragStart = (event: DragEvent<HTMLButtonElement>, trackId: string) => {
@@ -326,86 +358,133 @@ export default function NewCdPage() {
                 Nenhuma faixa adicionada.
               </p>
             )}
-            {tracks.map((track, index) => (
-              <div
-                key={track.id}
-                className="rounded-lg border p-4"
-                onDragOver={handleDragOver}
-                onDrop={(event) => handleDrop(event, track.id)}
-              >
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="flex items-center gap-3">
-                    <button
+            {tracks.map((track, index) => {
+              const isExpanded = expandedTrackIds.includes(track.id);
+              const hasErrors = Boolean(trackErrors[track.id]);
+              const trimmedTitle = track.title.trim();
+              const trackLabel = trimmedTitle
+                ? `Faixa ${index + 1} - ${trimmedTitle}`
+                : `Faixa ${index + 1} (sem nome)`;
+
+              return (
+                <div
+                  key={track.id}
+                  className="rounded-lg border"
+                  onDragOver={handleDragOver}
+                  onDrop={(event) => handleDrop(event, track.id)}
+                >
+                  <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-1 items-center gap-3">
+                      <button
+                        type="button"
+                        className="cursor-grab rounded-md border p-2 text-muted-foreground transition hover:text-foreground"
+                        draggable
+                        onDragStart={(event) => handleDragStart(event, track.id)}
+                        aria-label="Reordenar faixa"
+                      >
+                        <GripVertical className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          'flex flex-1 items-center gap-2 text-left transition-colors',
+                          isExpanded ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                        )}
+                        onClick={() => toggleTrackExpansion(track.id)}
+                        aria-expanded={isExpanded}
+                        aria-controls={`track-panel-${track.id}`}
+                      >
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        <span className="flex-1 truncate text-base font-medium">{trackLabel}</span>
+                        {track.audioFile && (
+                          <span className="text-lg" aria-hidden>
+                            🎵
+                          </span>
+                        )}
+                        {hasErrors && <span className="text-destructive">•</span>}
+                      </button>
+                    </div>
+                    <Button
                       type="button"
-                      className="cursor-grab rounded-md border p-2 text-muted-foreground transition hover:text-foreground"
-                      draggable
-                      onDragStart={(event) => handleDragStart(event, track.id)}
-                      aria-label="Reordenar faixa"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeTrack(track.id)}
+                      aria-label="Remover faixa"
                     >
-                      <GripVertical className="h-4 w-4" />
-                    </button>
-                    <h3 className="text-base font-medium">Faixa {index + 1}</h3>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button type="button" variant="ghost" size="icon" onClick={() => removeTrack(track.id)} aria-label="Remover faixa">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor={`track-title-${track.id}`}>Nome da música *</Label>
-                    <Input
-                      id={`track-title-${track.id}`}
-                      placeholder="Ex: Nome da faixa"
-                      value={track.title}
-                      onChange={(event) => updateTrack(track.id, 'title', event.target.value)}
-                    />
-                    {trackErrors[track.id]?.title && (
-                      <p className="text-sm text-destructive">{trackErrors[track.id]?.title}</p>
+                  <div
+                    id={`track-panel-${track.id}`}
+                    aria-hidden={!isExpanded}
+                    className={cn(
+                      'transition-all duration-300 ease-in-out',
+                      isExpanded ? 'max-h-[2000px] border-t border-border opacity-100' : 'max-h-0 opacity-0'
                     )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={`track-composers-${track.id}`}>Compositores</Label>
-                    <Input
-                      id={`track-composers-${track.id}`}
-                      placeholder="Ex: Nome dos compositores"
-                      value={track.composers}
-                      onChange={(event) => updateTrack(track.id, 'composers', event.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={`track-time-${track.id}`}>Duração</Label>
-                    <Input
-                      id={`track-time-${track.id}`}
-                      placeholder="Ex: 03:45"
-                      value={track.time}
-                      onChange={(event) => updateTrack(track.id, 'time', event.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">Informe a duração no formato mm:ss.</p>
-                    {trackErrors[track.id]?.time && (
-                      <p className="text-sm text-destructive">{trackErrors[track.id]?.time}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor={`track-lyric-${track.id}`}>Letra / Lyric</Label>
-                    <RichTextEditor
-                      value={track.lyric}
-                      onChange={(value) => updateTrack(track.id, 'lyric', value)}
-                      placeholder="Adicione a letra completa da faixa, se disponível."
-                      rows={6}
-                    />
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Áudio da faixa</Label>
-                    <AudioUpload
-                      value={track.audioFile ?? undefined}
-                      onChange={(audio) => updateTrack(track.id, 'audioFile', audio ?? null)}
-                      folder="tracks"
-                    />
-                    <p className="text-xs text-muted-foreground">MP3, WAV, FLAC | Máx: 100MB</p>
+                  >
+                    <div
+                      className={cn(
+                        'grid gap-4 p-4 md:grid-cols-2',
+                        isExpanded ? 'pointer-events-auto' : 'pointer-events-none'
+                      )}
+                    >
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor={`track-title-${track.id}`}>Nome da música *</Label>
+                        <Input
+                          id={`track-title-${track.id}`}
+                          placeholder="Ex: Nome da faixa"
+                          value={track.title}
+                          onChange={(event) => updateTrack(track.id, 'title', event.target.value)}
+                        />
+                        {trackErrors[track.id]?.title && (
+                          <p className="text-sm text-destructive">{trackErrors[track.id]?.title}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`track-composers-${track.id}`}>Compositores</Label>
+                        <Input
+                          id={`track-composers-${track.id}`}
+                          placeholder="Ex: Nome dos compositores"
+                          value={track.composers}
+                          onChange={(event) => updateTrack(track.id, 'composers', event.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`track-time-${track.id}`}>Duração</Label>
+                        <Input
+                          id={`track-time-${track.id}`}
+                          placeholder="Ex: 03:45"
+                          value={track.time}
+                          onChange={(event) => updateTrack(track.id, 'time', event.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">Informe a duração no formato mm:ss.</p>
+                        {trackErrors[track.id]?.time && (
+                          <p className="text-sm text-destructive">{trackErrors[track.id]?.time}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor={`track-lyric-${track.id}`}>Letra / Lyric</Label>
+                        <RichTextEditor
+                          value={track.lyric}
+                          onChange={(value) => updateTrack(track.id, 'lyric', value)}
+                          placeholder="Adicione a letra completa da faixa, se disponível."
+                          rows={6}
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Áudio da faixa</Label>
+                        <AudioUpload
+                          value={track.audioFile ?? undefined}
+                          onChange={(audio) => updateTrack(track.id, 'audioFile', audio ?? null)}
+                          folder="tracks"
+                        />
+                        <p className="text-xs text-muted-foreground">MP3, WAV, FLAC | Máx: 100MB</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
 
