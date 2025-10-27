@@ -1,7 +1,7 @@
 'use client';
 
 import type { DragEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -72,6 +72,12 @@ export default function NewCdPage() {
   const [trackErrors, setTrackErrors] = useState<Record<string, { title?: string; time?: string }>>({});
   const [coverError, setCoverError] = useState<string | null>(null);
   const [expandedTrackIds, setExpandedTrackIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (tracks.length && expandedTrackIds.length === 0) {
+      setExpandedTrackIds([tracks[0].id]);
+    }
+  }, [tracks, expandedTrackIds.length]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -268,8 +274,10 @@ export default function NewCdPage() {
       return;
     }
 
+    const data = (await response.json().catch(() => null)) as { _id?: string; id?: string } | null;
     toast.success('CD criado com sucesso');
-    router.push('/admin/cds');
+    const cdId = data?._id ?? data?.id;
+    router.push(cdId ? `/admin/cds/${cdId}` : '/admin/cds');
   };
 
   return (
