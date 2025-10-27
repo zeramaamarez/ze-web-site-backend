@@ -59,7 +59,30 @@ const UploadFileSchema = new Schema(
     folderPath: String,
     folder: Schema.Types.Mixed,
     created_by: { type: Types.ObjectId, ref: 'Admin' },
-    updated_by: { type: Types.ObjectId, ref: 'Admin' }
+    updated_by: { type: Types.ObjectId, ref: 'Admin' },
+    deleted: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    deletedAt: {
+      type: Date,
+      default: null
+    },
+    deletedBy: {
+      type: Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    deletionReason: {
+      type: String,
+      enum: ['cover_replaced', 'track_deleted', 'cd_deleted', 'manual'],
+      default: null
+    },
+    relatedTo: {
+      type: String,
+      default: null
+    }
   },
   {
     collection: 'upload_file',
@@ -69,6 +92,7 @@ const UploadFileSchema = new Schema(
 );
 
 UploadFileSchema.index({ hash: 1 });
+UploadFileSchema.index({ deleted: 1, deletedAt: 1 });
 
 export type UploadFile = InferSchemaType<typeof UploadFileSchema>;
 

@@ -1,5 +1,6 @@
 import UploadFileModel from '@/lib/models/UploadFile';
 import type { Types } from 'mongoose';
+import { softDeleteMedia, type SoftDeleteReason } from '@/lib/cloudinary-helpers';
 
 interface UpdateRelatedParams {
   fileId?: string | Types.ObjectId | null;
@@ -32,18 +33,35 @@ export async function detachFile(fileId?: string | Types.ObjectId | null, refId?
   });
 }
 
-export async function deleteFileIfOrphan(fileId?: string | Types.ObjectId | null) {
+interface DeleteFileIfOrphanOptions {
+  reason?: SoftDeleteReason;
+  relatedTo?: string;
+  userId?: string | Types.ObjectId;
+}
+
+export async function deleteFileIfOrphan(
+  fileId?: string | Types.ObjectId | null,
+  { reason = 'manual', relatedTo, userId }: DeleteFileIfOrphanOptions = {}
+) {
   if (!fileId) return;
 
   const file = await UploadFileModel.findById(fileId);
   if (!file) return;
 
   if (!file.related?.length) {
-    console.info('[UPLOAD] Orphan file preserved', {
-      id: file._id.toString(),
-      name: file.name,
-      provider: file.provider,
-      publicId: file.provider_metadata?.public_id
+    if (file.deleted) {
+      console.info('[UPLOAD] Arquivo já marcado para deleção', {
+        id: file._id.toString(),
+        name: file.name
+      });
+      return;
+    }
+
+    await softDeleteMedia({
+      mediaId: file._id,
+      reason,
+      relatedTo: relatedTo ?? `UploadFile:${file._id.toString()}`,
+      userId
     });
   }
 }

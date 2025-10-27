@@ -22,7 +22,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const identifier = params.id;
 
   const text = await TextModel.findOne(isObjectId(identifier) ? { _id: identifier } : { slug: identifier })
-    .populate('cover')
+    .populate({ path: 'cover', match: { deleted: { $ne: true } } })
     .lean();
 
   if (!text) {
@@ -61,15 +61,25 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (parsed.data.cover && parsed.data.cover !== previousCover) {
       await attachFile({ fileId: parsed.data.cover, refId: text._id, kind: 'Text', field: 'cover' });
       await detachFile(previousCover, text._id);
-      await deleteFileIfOrphan(previousCover);
+      await deleteFileIfOrphan(previousCover, {
+        reason: 'cover_replaced',
+        relatedTo: `Text:${text._id.toString()}`,
+        userId: authResult.session.user!.id
+      });
     } else if (!parsed.data.cover && previousCover) {
       await detachFile(previousCover, text._id);
-      await deleteFileIfOrphan(previousCover);
+      await deleteFileIfOrphan(previousCover, {
+        reason: 'cover_replaced',
+        relatedTo: `Text:${text._id.toString()}`,
+        userId: authResult.session.user!.id
+      });
       text.cover = undefined;
       await text.save();
     }
 
-    const updated = await TextModel.findById(text._id).populate('cover').lean();
+    const updated = await TextModel.findById(text._id)
+      .populate({ path: 'cover', match: { deleted: { $ne: true } } })
+      .lean();
     return NextResponse.json(formatText(updated));
   } catch (error) {
     console.error('Text update error', error);
@@ -96,7 +106,11 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
 
   if (coverId) {
     await detachFile(coverId, text._id);
-    await deleteFileIfOrphan(coverId);
+    await deleteFileIfOrphan(coverId, {
+      reason: 'manual',
+      relatedTo: `Text:${text._id.toString()}`,
+      userId: authResult.session.user!.id
+    });
   }
 
   return NextResponse.json({ message: 'Texto removido' });

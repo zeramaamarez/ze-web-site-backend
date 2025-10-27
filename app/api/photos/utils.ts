@@ -92,7 +92,10 @@ export async function buildUploadMap(ids: Iterable<string>) {
     return new Map<string, AnyRecord>();
   }
 
-  const uploads = await UploadFileModel.find({ _id: { $in: objectIds } }).lean();
+  const uploads = await UploadFileModel.find({
+    _id: { $in: objectIds },
+    deleted: { $ne: true }
+  }).lean();
   const map = new Map<string, AnyRecord>();
 
   for (const upload of uploads) {
