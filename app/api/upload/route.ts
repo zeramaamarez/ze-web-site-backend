@@ -68,7 +68,7 @@ export async function GET(request: Request) {
   const sortParam = searchParams.get('sort') || 'createdAt';
   const orderParam = searchParams.get('order') === 'asc' ? 1 : -1;
 
-  const filters: Record<string, unknown>[] = [];
+  const filters: Record<string, unknown>[] = [{ deleted: { $ne: true } }];
 
   if (search) {
     filters.push({ name: { $regex: search, $options: 'i' } });
@@ -192,7 +192,7 @@ export async function POST(request: Request) {
   const hash = crypto.createHash('md5').update(buffer).digest('hex');
 
   await connectMongo();
-  const existing = await UploadFileModel.findOne({ hash }).lean();
+  const existing = await UploadFileModel.findOne({ hash, deleted: { $ne: true } }).lean();
   if (existing) {
     return NextResponse.json(existing);
   }

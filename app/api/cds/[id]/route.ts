@@ -9,6 +9,7 @@ import { cdSchema } from '@/lib/validations/cd';
 import { requireAdmin } from '@/lib/api';
 import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 import { isObjectId } from '@/lib/utils';
+import { softDeleteMultipleMedia } from '@/lib/cloudinary-helpers';
 
 function resolveObjectId(value: unknown): Types.ObjectId | null {
   if (!value) return null;
@@ -46,7 +47,7 @@ async function loadCd(identifier: string, { log = false } = {}) {
     try {
       const coverId = resolveObjectId(cdDoc.cover);
       if (coverId) {
-        const coverDoc = await UploadFileModel.findById(coverId).lean();
+      const coverDoc = await UploadFileModel.findOne({ _id: coverId, deleted: { $ne: true } }).lean();
         if (coverDoc) {
           const coverCopy = JSON.parse(JSON.stringify(coverDoc)) as Record<string, unknown>;
           coverCopy.id = coverDoc._id.toString();
@@ -114,7 +115,7 @@ async function loadCd(identifier: string, { log = false } = {}) {
           try {
             const audioId = resolveObjectId(track.track);
             if (audioId) {
-              const audioDoc = await UploadFileModel.findById(audioId).lean();
+              const audioDoc = await UploadFileModel.findOne({ _id: audioId, deleted: { $ne: true } }).lean();
               if (audioDoc) {
                 const audioCopy = JSON.parse(JSON.stringify(audioDoc)) as Record<string, unknown>;
                 audioCopy.id = audioDoc._id.toString();
@@ -212,10 +213,18 @@ export async function PUT(request: Request, { params }: { params: { id: string }
             if (track.track && track.track !== previousAudio) {
               await attachFile({ fileId: track.track, refId: existingTrack._id, kind: 'CdTrack', field: 'track' });
               await detachFile(previousAudio, existingTrack._id);
-              await deleteFileIfOrphan(previousAudio);
+              await deleteFileIfOrphan(previousAudio, {
+                reason: 'track_deleted',
+                relatedTo: `Track:${existingTrack._id.toString()}`,
+                userId: authResult.session.user!.id
+              });
             } else if (!track.track && previousAudio) {
               await detachFile(previousAudio, existingTrack._id);
-              await deleteFileIfOrphan(previousAudio);
+              await deleteFileIfOrphan(previousAudio, {
+                reason: 'track_deleted',
+                relatedTo: `Track:${existingTrack._id.toString()}`,
+                userId: authResult.session.user!.id
+              });
             }
             keepTrackIds.push(existingTrack._id.toString());
           }
@@ -246,7 +255,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
             await toRemove.deleteOne();
             if (audioId) {
               await detachFile(audioId, toRemove._id);
-              await deleteFileIfOrphan(audioId);
+              await deleteFileIfOrphan(audioId, {
+                reason: 'track_deleted',
+                relatedTo: `Track:${toRemove._id.toString()}`,
+                userId: authResult.session.user!.id
+              });
             }
           }
         }
@@ -260,7 +273,18 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (parsed.data.cover && parsed.data.cover !== previousCover) {
       await attachFile({ fileId: parsed.data.cover, refId: cd._id, kind: 'Cd', field: 'cover' });
       await detachFile(previousCover, cd._id);
-      await deleteFileIfOrphan(previousCover);
+      await deleteFileIfOrphan(previousCover, {
+        reason: 'cover_replaced',
+        relatedTo: `CD:${cd._id.toString()}`,
+        userId: authResult.session.user!.id
+      });
+    } else if (!parsed.data.cover && previousCover) {
+      await detachFile(previousCover, cd._id);
+      await deleteFileIfOrphan(previousCover, {
+        reason: 'cover_replaced',
+        relatedTo: `CD:${cd._id.toString()}`,
+        userId: authResult.session.user!.id
+      });
     }
 
     const populatedCd = await loadCd(cd._id.toString());
@@ -290,23 +314,34 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     .map((value) => (typeof value === 'string' ? value : value?.toString()))
     .filter((value): value is string => Boolean(value));
 
-  await cd.deleteOne();
-  if (trackIds?.length) {
-    const tracks = await CdTrackModel.find({ _id: { $in: trackIds } });
-    for (const track of tracks) {
-      const audioId = track.track?.toString();
-      await track.deleteOne();
-      if (audioId) {
-        await detachFile(audioId, track._id);
-        await deleteFileIfOrphan(audioId);
-      }
+  const tracks = trackIds.length ? await CdTrackModel.find({ _id: { $in: trackIds } }) : [];
+
+  const mediaIds: string[] = [];
+
+  if (coverId) {
+    mediaIds.push(coverId);
+  }
+
+  for (const track of tracks) {
+    const audioId = track.track?.toString();
+    if (audioId) {
+      mediaIds.push(audioId);
+      await detachFile(audioId, track._id);
     }
+    await track.deleteOne();
   }
 
   if (coverId) {
     await detachFile(coverId, cd._id);
-    await deleteFileIfOrphan(coverId);
   }
 
-  return NextResponse.json({ message: 'CD removido' });
+  await cd.deleteOne();
+
+  if (mediaIds.length > 0) {
+    await softDeleteMultipleMedia(mediaIds, 'cd_deleted', authResult.session.user!.id, `CD:${params.id}`);
+  }
+
+  return NextResponse.json({
+    message: `CD removido. ${mediaIds.length} arquivos marcados para limpeza.`
+  });
 }

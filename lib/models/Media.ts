@@ -1,4 +1,4 @@
-import { models, model, Schema, type InferSchemaType } from 'mongoose';
+import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 
 const FormatSchema = new Schema(
   {
@@ -48,7 +48,30 @@ const MediaSchema = new Schema(
       medium: FormatSchema,
       large: FormatSchema
     },
-    related: [RelatedSchema]
+    related: [RelatedSchema],
+    deleted: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    deletedAt: {
+      type: Date,
+      default: null
+    },
+    deletedBy: {
+      type: Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    deletionReason: {
+      type: String,
+      enum: ['cover_replaced', 'track_deleted', 'cd_deleted', 'manual'],
+      default: null
+    },
+    relatedTo: {
+      type: String,
+      default: null
+    }
   },
   {
     collection: 'media',
@@ -57,6 +80,7 @@ const MediaSchema = new Schema(
 );
 
 MediaSchema.index({ name: 'text' });
+MediaSchema.index({ deleted: 1, deletedAt: 1 });
 
 export type MediaDocument = InferSchemaType<typeof MediaSchema>;
 

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import cloudinary from '@/lib/cloudinary';
 import { connectMongo } from '@/lib/mongodb';
 import UploadFileModel from '@/lib/models/UploadFile';
 import { requireAdmin } from '@/lib/api';
 import { isObjectId } from '@/lib/utils';
+import { softDeleteMedia } from '@/lib/cloudinary-helpers';
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   const authResult = await requireAdmin();
@@ -14,7 +14,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   }
 
   await connectMongo();
-  const file = await UploadFileModel.findById(params.id);
+  const file = await UploadFileModel.findOne({ _id: params.id, deleted: { $ne: true } });
   if (!file) {
     return NextResponse.json({ error: 'Arquivo não encontrado' }, { status: 404 });
   }
@@ -23,16 +23,12 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: 'Arquivo em uso', related: file.related }, { status: 400 });
   }
 
-  if (file.provider_metadata?.public_id) {
-    try {
-      await cloudinary.uploader.destroy(file.provider_metadata.public_id, {
-        resource_type: file.provider_metadata.resource_type || 'image'
-      });
-    } catch (error) {
-      console.error('Erro ao remover arquivo do Cloudinary', error);
-    }
-  }
+  await softDeleteMedia({
+    mediaId: file._id,
+    reason: 'manual',
+    userId: authResult.session.user!.id,
+    relatedTo: `UploadFile:${file._id.toString()}`
+  });
 
-  await file.deleteOne();
-  return NextResponse.json({ message: 'Arquivo removido' });
+  return NextResponse.json({ message: 'Arquivo marcado para revisão' });
 }

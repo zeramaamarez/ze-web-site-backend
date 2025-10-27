@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   const sortParam = searchParams.get('sort') || 'createdAt';
   const orderParam = searchParams.get('order') === 'asc' ? 1 : -1;
 
-  const filters: Record<string, unknown>[] = [];
+  const filters: Record<string, unknown>[] = [{ deleted: { $ne: true } }];
 
   if (search) {
     filters.push({ name: { $regex: search, $options: 'i' } });
