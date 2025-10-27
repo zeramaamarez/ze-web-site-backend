@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { MapPin, ImageIcon } from 'lucide-react';
+import { ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ColumnCustomizer } from '@/components/admin/column-customizer';
@@ -23,8 +23,11 @@ interface ShowItem {
   date: string;
   time?: string;
   venue: string;
+  local?: string;
   city: string;
+  cidade?: string;
   state?: string;
+  estado?: string;
   banner?: { url: string }[] | { url: string } | null;
   cover?: { url: string } | null;
   published_at?: string | null;
@@ -45,15 +48,19 @@ const resolveBannerList = (banner: ShowItem['banner']) => {
   return [] as { url: string }[];
 };
 
+const resolveCity = (item: ShowItem) => item.city || item.cidade || '—';
+const resolveState = (item: ShowItem) => item.state || item.estado || '—';
+const resolveVenue = (item: ShowItem) => item.venue || item.local || '—';
+
 const columnOptions: ColumnOption[] = [
-  { key: 'banner', label: 'Banner', defaultVisible: false },
-  { key: 'title', label: 'Show', defaultVisible: true },
-  { key: 'date', label: 'Data', defaultVisible: true },
-  { key: 'city', label: 'Cidade', defaultVisible: true },
-  { key: 'venue', label: 'Local', defaultVisible: false },
-  { key: 'status', label: 'Status', defaultVisible: true },
-  { key: 'published_at', label: 'Publicado', defaultVisible: true },
-  { key: 'actions', label: 'Ações', alwaysVisible: true }
+  { key: 'banner', label: 'BANNER', defaultVisible: true },
+  { key: 'city', label: 'CIDADE', defaultVisible: true },
+  { key: 'state', label: 'ESTADO', defaultVisible: true },
+  { key: 'venue', label: 'LOCAL', defaultVisible: true },
+  { key: 'date', label: 'DATA', defaultVisible: true },
+  { key: 'status', label: 'STATUS', defaultVisible: true },
+  { key: 'published_at', label: 'PUBLICADO', defaultVisible: true },
+  { key: 'actions', label: 'AÇÕES', defaultVisible: true }
 ];
 
 const formatDate = (value: string) => {
@@ -181,10 +188,10 @@ export default function ShowsPage() {
     () => [
       {
         key: 'banner',
-        label: 'Banner',
-        header: 'Banner',
+        label: 'BANNER',
+        header: 'BANNER',
         align: 'center',
-        defaultVisible: false,
+        defaultVisible: true,
         render: (item) => {
           const bannerList = resolveBannerList(item.banner);
           const image = bannerList[0] ?? item.cover;
@@ -204,52 +211,41 @@ export default function ShowsPage() {
         }
       },
       {
-        key: 'title',
-        label: 'Show',
-        header: 'Show',
+        key: 'city',
+        label: 'CIDADE',
+        header: 'CIDADE',
         sortable: true,
         defaultVisible: true,
-        render: (item) => {
-          const showLocation = item.city || item.title;
-          return (
-            <div>
-              <p className="font-medium text-foreground">
-                {showLocation}
-                {item.state ? ` - ${item.state}` : ''}
-              </p>
-              {item.venue ? <p className="text-xs text-muted-foreground">{item.venue}</p> : null}
-            </div>
-          );
-        }
+        render: (item) => <span className="text-sm font-medium text-foreground">{resolveCity(item)}</span>
+      },
+      {
+        key: 'state',
+        label: 'ESTADO',
+        header: 'ESTADO',
+        sortable: true,
+        defaultVisible: true,
+        render: (item) => <span className="text-sm text-foreground">{resolveState(item)}</span>
+      },
+      {
+        key: 'venue',
+        label: 'LOCAL',
+        header: 'LOCAL',
+        sortable: true,
+        defaultVisible: true,
+        render: (item) => <span className="text-sm text-foreground">{resolveVenue(item)}</span>
       },
       {
         key: 'date',
-        label: 'Data',
-        header: 'Data',
+        label: 'DATA',
+        header: 'DATA',
         sortable: true,
         defaultVisible: true,
         render: (item) => formatDate(item.date)
       },
       {
-        key: 'city',
-        label: 'Cidade',
-        header: 'Cidade',
-        sortable: true,
-        defaultVisible: true,
-        render: (item) => (
-          <div className="flex items-center gap-1 text-sm">
-            <MapPin className="h-4 w-4 text-muted-foreground" />
-            <span>
-              {item.city}
-              {item.state ? `, ${item.state}` : ''}
-            </span>
-          </div>
-        )
-      },
-      {
         key: 'status',
-        label: 'Status',
-        header: 'Status',
+        label: 'STATUS',
+        header: 'STATUS',
         align: 'center',
         defaultVisible: true,
         render: (item) => (
@@ -260,8 +256,8 @@ export default function ShowsPage() {
       },
       {
         key: 'published_at',
-        label: 'Publicado',
-        header: 'Publicado',
+        label: 'PUBLICADO',
+        header: 'PUBLICADO',
         align: 'center',
         defaultVisible: true,
         render: (item) => (
@@ -272,10 +268,9 @@ export default function ShowsPage() {
       },
       {
         key: 'actions',
-        label: 'Ações',
-        header: 'Ações',
+        label: 'AÇÕES',
+        header: 'AÇÕES',
         align: 'right',
-        alwaysVisible: true,
         render: (item) => (
           <div className="flex items-center justify-end gap-2">
             <Button asChild variant="outline" size="sm" className="h-8 px-3">
@@ -302,6 +297,9 @@ export default function ShowsPage() {
     (item: ShowItem) => {
       const bannerList = resolveBannerList(item.banner);
       const image = bannerList[0] ?? item.cover;
+      const city = resolveCity(item);
+      const state = resolveState(item);
+      const venue = resolveVenue(item);
       return (
         <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
           <div className="space-y-2">
@@ -320,16 +318,19 @@ export default function ShowsPage() {
                 </div>
               )}
               <div className="flex-1 space-y-1">
-                <h3 className="text-lg font-semibold leading-tight text-foreground">{item.title}</h3>
-                <p className="text-sm text-muted-foreground">{item.venue}</p>
+                <h3 className="text-lg font-semibold leading-tight text-foreground">
+                  {city}
+                  {state && state !== '—' ? ` - ${state}` : ''}
+                </h3>
+                <p className="text-sm text-muted-foreground">{venue}</p>
               </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             <span className="rounded-full bg-muted px-2 py-1">{formatDate(item.date)}</span>
             <span className="rounded-full bg-muted px-2 py-1">
-              {item.city}
-              {item.state ? `, ${item.state}` : ''}
+              {city}
+              {state && state !== '—' ? `, ${state}` : ''}
             </span>
             <Badge className={item.isPast ? 'bg-slate-200 text-slate-700 hover:bg-slate-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}>
               {item.isPast ? 'Realizado' : 'Próximo'}
