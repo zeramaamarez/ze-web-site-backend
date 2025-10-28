@@ -4,7 +4,7 @@ import { applyStatusFields } from '@/lib/models/plugins/status';
 
 const DvdSchema = new Schema(
   {
-    title: { type: String, required: true },
+    title: { type: String, required: true, trim: true },
     company: String,
     release_date: String,
     info: String,
@@ -14,7 +14,10 @@ const DvdSchema = new Schema(
     track: [{ type: Types.ObjectId, ref: 'DvdTrack' }],
     published_at: { type: Date, default: null },
     created_by: { type: Types.ObjectId, ref: 'Admin' },
-    updated_by: { type: Types.ObjectId, ref: 'Admin' }
+    updated_by: { type: Types.ObjectId, ref: 'Admin' },
+    deleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date, default: null },
+    deletionReason: { type: String, default: null }
   },
   { timestamps: true }
 );

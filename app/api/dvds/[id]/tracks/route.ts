@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   const track = await DvdTrackModel.create({
     name: parsed.data.name,
     composers: parsed.data.composers,
-    publishing_company: parsed.data.publishing_company,
+    label: parsed.data.label,
     time: parsed.data.time,
     lyric: parsed.data.lyric,
     track: parsed.data.track || undefined
@@ -47,7 +47,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       _id: track._id.toString(),
       name: track.name,
       composers: track.composers,
-      publishing_company: track.publishing_company,
+      label: track.label,
       time: track.time,
       lyric: track.lyric,
       track: track.track?.toString()

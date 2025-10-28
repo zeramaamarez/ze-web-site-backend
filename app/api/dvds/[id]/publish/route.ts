@@ -18,7 +18,16 @@ export async function PATCH(_: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: 'DVD não encontrado' }, { status: 404 });
   }
 
-  dvd.published_at = dvd.published_at ? null : new Date();
+  if (dvd.deleted) {
+    return NextResponse.json({ error: 'DVD removido não pode ser publicado' }, { status: 400 });
+  }
+
+  const shouldPublish = !dvd.published_at;
+  const publishedAt = shouldPublish ? new Date() : null;
+
+  dvd.published_at = publishedAt;
+  dvd.publishedAt = publishedAt;
+  dvd.status = shouldPublish ? 'published' : 'draft';
   dvd.updated_by = authResult.session.user!.id;
   await dvd.save();
 

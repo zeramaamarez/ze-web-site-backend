@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import MediaModel from '@/lib/models/Media';
 import UploadFileModel from '@/lib/models/UploadFile';
 
-export type SoftDeleteReason = 'cover_replaced' | 'track_deleted' | 'cd_deleted' | 'manual';
+export type SoftDeleteReason = 'cover_replaced' | 'track_deleted' | 'cd_deleted' | 'dvd_deleted' | 'manual';
 
 interface SoftDeleteOptions {
   mediaId: string | Types.ObjectId;

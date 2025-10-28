@@ -3,9 +3,11 @@ import { models, model, Schema, Types, type InferSchemaType } from 'mongoose';
 const DvdTrackSchema = new Schema(
   {
     name: { type: String, required: true },
+    composers: String,
+    label: String,
     time: String,
-    lyric: { type: Types.ObjectId, ref: 'Lyric' },
-    data_sheet: String
+    lyric: String,
+    track: { type: Types.ObjectId, ref: 'UploadFile' }
   },
   {
     timestamps: true,
@@ -13,7 +15,7 @@ const DvdTrackSchema = new Schema(
   }
 );
 
-DvdTrackSchema.index({ name: 'text' });
+DvdTrackSchema.index({ name: 'text', composers: 'text', label: 'text' });
 
 export type DvdTrack = InferSchemaType<typeof DvdTrackSchema>;
 

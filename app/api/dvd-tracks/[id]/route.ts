@@ -4,6 +4,7 @@ import DvdTrackModel from '@/lib/models/DvdTrack';
 import { dvdTrackSchema } from '@/lib/validations/dvd';
 import { requireAdmin } from '@/lib/api';
 import { isObjectId } from '@/lib/utils';
+import { attachFile, detachFile, deleteFileIfOrphan } from '@/lib/upload';
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const authResult = await requireAdmin();
@@ -37,12 +38,45 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
 
   await connectMongo();
-  const track = await DvdTrackModel.findByIdAndUpdate(params.id, parsed.data, { new: true }).lean();
+  const track = await DvdTrackModel.findById(params.id);
   if (!track) {
     return NextResponse.json({ error: 'Faixa não encontrada' }, { status: 404 });
   }
 
-  return NextResponse.json(track);
+  const previousAudio = track.track?.toString();
+  if (parsed.data.name !== undefined) track.name = parsed.data.name;
+  if (parsed.data.composers !== undefined) track.composers = parsed.data.composers;
+  if (parsed.data.label !== undefined) track.label = parsed.data.label;
+  if (parsed.data.time !== undefined) track.time = parsed.data.time;
+  if (parsed.data.lyric !== undefined) track.lyric = parsed.data.lyric;
+
+  if (Object.prototype.hasOwnProperty.call(parsed.data, 'track')) {
+    track.track = parsed.data.track || undefined;
+  }
+
+  await track.save();
+
+  if (Object.prototype.hasOwnProperty.call(parsed.data, 'track')) {
+    const newTrackId = parsed.data.track ?? undefined;
+    if (newTrackId && newTrackId !== previousAudio) {
+      await attachFile({ fileId: newTrackId, refId: track._id, kind: 'DvdTrack', field: 'track' });
+      await detachFile(previousAudio, track._id);
+      await deleteFileIfOrphan(previousAudio, {
+        reason: 'track_deleted',
+        relatedTo: `DvdTrack:${track._id.toString()}`,
+        userId: authResult.session.user!.id
+      });
+    } else if (!newTrackId && previousAudio) {
+      await detachFile(previousAudio, track._id);
+      await deleteFileIfOrphan(previousAudio, {
+        reason: 'track_deleted',
+        relatedTo: `DvdTrack:${track._id.toString()}`,
+        userId: authResult.session.user!.id
+      });
+    }
+  }
+
+  return NextResponse.json(await DvdTrackModel.findById(params.id).lean());
 }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
@@ -54,6 +88,21 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   }
 
   await connectMongo();
-  await DvdTrackModel.findByIdAndDelete(params.id);
+  const track = await DvdTrackModel.findById(params.id);
+  if (!track) {
+    return NextResponse.json({ error: 'Faixa não encontrada' }, { status: 404 });
+  }
+
+  const audioId = track.track?.toString();
+  await track.deleteOne();
+  if (audioId) {
+    await detachFile(audioId, track._id);
+    await deleteFileIfOrphan(audioId, {
+      reason: 'track_deleted',
+      relatedTo: `DvdTrack:${track._id.toString()}`,
+      userId: authResult.session.user!.id
+    });
+  }
+
   return NextResponse.json({ message: 'Faixa removida' });
 }
