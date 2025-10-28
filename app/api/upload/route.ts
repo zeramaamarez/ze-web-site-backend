@@ -23,14 +23,22 @@ const ALLOWED_TYPES = new Set([
 
 async function uploadToCloudinary(
   buffer: Buffer,
-  folder?: string,
-  resourceType: 'image' | 'video' | 'raw' = 'image'
+  options: {
+    folder?: string;
+    resourceType?: 'image' | 'video' | 'raw';
+    publicId: string;
+  }
 ) {
+  const { folder, resourceType = 'image', publicId } = options;
   return new Promise<UploadApiResponse>((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder,
         resource_type: resourceType,
+        public_id: publicId,
+        overwrite: true,
+        invalidate: true,
+        unique_filename: true,
         eager:
           resourceType === 'image'
             ? [
@@ -191,6 +199,8 @@ export async function POST(request: Request) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const hash = crypto.createHash('md5').update(buffer).digest('hex');
 
+  const uniqueId = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+
   await connectMongo();
   const existing = await UploadFileModel.findOne({ hash, deleted: { $ne: true } }).lean();
   if (existing) {
@@ -205,7 +215,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await uploadToCloudinary(buffer, folder, resourceType);
+    const result = await uploadToCloudinary(buffer, {
+      folder,
+      resourceType,
+      publicId: uniqueId
+    });
 
     const formats =
       resourceType === 'image'
