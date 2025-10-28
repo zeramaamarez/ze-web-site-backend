@@ -3,8 +3,8 @@ import { connectMongo } from '@/lib/mongodb';
 import DvdModel from '@/lib/models/Dvd';
 import DvdTrackModel from '@/lib/models/DvdTrack';
 import { dvdSchema } from '@/lib/validations/dvd';
-import { requireAdmin } from '@/lib/api';
 import { attachFile } from '@/lib/upload';
+import { requireAdmin } from '@/lib/api';
 import LyricModel from '@/lib/models/Lyric';
 import {
   buildPaginatedResponse,
@@ -19,7 +19,7 @@ import {
 } from '@/lib/legacy';
 
 const LEGACY_SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'title']);
-const SORTABLE_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'release_date', 'published_at']);
+const SORTABLE_FIELDS = new Set(['createdAt', 'updatedAt', 'title', 'release_date', 'company', 'published_at']);
 
 function buildLegacySort(sortParam?: string | null) {
   const sortField = sortParam?.replace(/^-/, '') || 'createdAt';
@@ -94,15 +94,7 @@ function extractTrackId(entry: unknown): string | null {
   return null;
 }
 
-const TRACK_DATA_KEYS = new Set([
-  'name',
-  'publishing_company',
-  'composers',
-  'time',
-  'lyric',
-  'data_sheet',
-  'track'
-]);
+const TRACK_DATA_KEYS = new Set(['name', 'label', 'composers', 'time', 'lyric', 'track']);
 
 function entryNeedsHydration(entry: unknown): boolean {
   if (!entry) {
@@ -269,6 +261,8 @@ export async function GET(request: Request) {
   const { start, limit, shouldPaginate, page } = parseLegacyPagination(searchParams);
 
   const filters: Record<string, unknown>[] = [];
+  filters.push({ $or: [{ deleted: { $exists: false } }, { deleted: false }] });
+
   const statusFilter = resolveStatusFilter(searchParams, { defaultStatus: shouldPaginate ? 'all' : undefined });
   if (statusFilter) {
     filters.push(statusFilter);
@@ -376,19 +370,26 @@ export async function POST(request: Request) {
 
     await connectMongo();
 
+    const { tracks = [], status: _status, ...dvdData } = parsed.data;
+    const publishedAtInput = dvdData.publishedAt ?? dvdData.published_at ?? null;
+    const normalizedPublishedAt = publishedAtInput ? new Date(publishedAtInput) : null;
+
     const dvd = await DvdModel.create({
-      ...parsed.data,
+      ...dvdData,
+      status: normalizedPublishedAt ? 'published' : 'draft',
+      publishedAt: normalizedPublishedAt,
+      published_at: normalizedPublishedAt,
       created_by: authResult.session.user!.id,
       updated_by: authResult.session.user!.id
     });
 
-    if (parsed.data.tracks?.length) {
+    if (tracks.length) {
       const trackIds: string[] = [];
-      for (const track of parsed.data.tracks) {
+      for (const track of tracks) {
         const trackDoc = await DvdTrackModel.create({
           name: track.name,
           composers: track.composers,
-          publishing_company: track.publishing_company,
+          label: track.label,
           time: track.time,
           lyric: track.lyric,
           track: track.track || undefined
@@ -402,8 +403,8 @@ export async function POST(request: Request) {
       await dvd.save();
     }
 
-    if (parsed.data.cover) {
-      await attachFile({ fileId: parsed.data.cover, refId: dvd._id, kind: 'Dvd', field: 'cover' });
+    if (dvdData.cover) {
+      await attachFile({ fileId: dvdData.cover, refId: dvd._id, kind: 'Dvd', field: 'cover' });
     }
 
     return NextResponse.json(await formatDvd(await serializeDvd(dvd._id.toString())), { status: 201 });

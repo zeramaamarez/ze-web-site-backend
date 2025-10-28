@@ -17,7 +17,8 @@ export async function GET(request: Request) {
   if (search) {
     filter.$or = [
       { name: { $regex: search, $options: 'i' } },
-      { composers: { $regex: search, $options: 'i' } }
+      { composers: { $regex: search, $options: 'i' } },
+      { label: { $regex: search, $options: 'i' } }
     ];
   }
 
@@ -37,7 +38,14 @@ export async function POST(request: Request) {
   }
 
   await connectMongo();
-  const track = await DvdTrackModel.create(parsed.data);
+  const track = await DvdTrackModel.create({
+    name: parsed.data.name,
+    composers: parsed.data.composers,
+    label: parsed.data.label,
+    time: parsed.data.time,
+    lyric: parsed.data.lyric,
+    track: parsed.data.track || undefined
+  });
   if (parsed.data.track) {
     await attachFile({ fileId: parsed.data.track, refId: track._id, kind: 'DvdTrack', field: 'track' });
   }

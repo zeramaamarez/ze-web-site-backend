@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 interface DvdItem {
   _id: string;
   title: string;
+  company?: string;
   release_date?: string;
   published_at?: string | null;
   cover?: { url: string } | null;
