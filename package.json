@@ -33,8 +33,8 @@
     "postcss": "^8.5.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.12.7",
     "react-hook-form": "^7.65.0",
+    "recharts": "^2.12.7",
     "slugify": "^1.6.6",
     "sonner": "^1.7.4",
     "tailwind-merge": "latest",
@@ -49,6 +49,7 @@
     "@types/react": "^18.3.26",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.33",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
 }
